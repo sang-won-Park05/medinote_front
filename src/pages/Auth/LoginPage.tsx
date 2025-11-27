@@ -1,29 +1,24 @@
-import React, { useState, useEffect, type ChangeEvent, type FormEvent } from 'react';
-import { FaHeart } from 'react-icons/fa';
-import { HiOutlineMail, HiOutlineLockClosed } from 'react-icons/hi';
-import { Link, useNavigate } from 'react-router-dom';
-import FindPasswordModal from '../../components/domain/Auth/FindPasswordModal';
-import useUserStore from '../../store/useUserStore';
-import { toast } from 'react-toastify';
+import React, {
+  useState,
+  useEffect,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
+import { FaHeart } from "react-icons/fa";
+import { HiOutlineMail, HiOutlineLockClosed } from "react-icons/hi";
+import { Link, useNavigate } from "react-router-dom";
+import FindPasswordModal from "../../components/domain/Auth/FindPasswordModal";
+import useUserStore from "../../store/useUserStore";
+import { toast } from "react-toastify";
 
-// 가계정 데이터베이스 (Mock DB)
-const MOCK_USERS = {
-  'admin@test.com': {
-    password: 'admin1234!',
-    name: '관리자',
-    role: 'admin' as const,
-  },
-  'user@test.com': {
-    password: 'user1234!',
-    name: '홍길동',
-    role: 'user' as const,
-  },
-};
+// ✅ Vite 기준 API 베이스 URL
+import { API_BASE_URL } from "../../utils/config";
 
 type LoginFormErrors = {
   email?: string;
   password?: string;
 };
+
 const validateEmail = (email: string): string | undefined => {
   if (!email) return "이메일을 입력해주세요.";
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -37,20 +32,20 @@ const validatePassword = (password: string): string | undefined => {
 export default function LoginPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const navigate = useNavigate();
-  
-  const [emailInput, setEmailInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
-  const [errors, setErrors] = useState<LoginFormErrors>({}); // 에러 메시지
-  const [touched, setTouched] = useState({ email: false, password: false }); // 사용자가 건드린 필드
-  const [isSubmitting, setIsSubmitting] = useState(false); // 제출 중(로딩) 상태
+
+  const [emailInput, setEmailInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [errors, setErrors] = useState<LoginFormErrors>({});
+  const [touched, setTouched] = useState({ email: false, password: false });
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { login, isLoggedIn, role } = useUserStore();
-  
+
   useEffect(() => {
     if (isLoggedIn) {
-      if (role === 'admin') {
-        navigate('/admin');
+      if (role === "admin") {
+        navigate("/admin");
       } else {
-        navigate('/dashboard');
+        navigate("/dashboard");
       }
     }
   }, [isLoggedIn, role, navigate]);
@@ -58,44 +53,49 @@ export default function LoginPage() {
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => setIsModalOpen(false);
 
-  // 입력창을 건드렸을 때(onBlur) 'touched' 상태 업데이트
   const handleBlur = (e: ChangeEvent<HTMLInputElement>) => {
-    const { name } = e.target as { name: 'email' | 'password' };
+    const { name } = e.target as { name: "email" | "password" };
     setTouched((prev) => ({ ...prev, [name]: true }));
-    if (name === 'email') {
+    if (name === "email") {
       setErrors((prev) => ({ ...prev, email: validateEmail(emailInput) }));
     }
-    if (name === 'password') {
-      setErrors((prev) => ({ ...prev, password: validatePassword(passwordInput) }));
+    if (name === "password") {
+      setErrors((prev) => ({
+        ...prev,
+        password: validatePassword(passwordInput),
+      }));
     }
   };
-  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target as { name: 'email' | 'password', value: string };
 
-    if (name === 'email') {
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target as {
+      name: "email" | "password";
+      value: string;
+    };
+
+    if (name === "email") {
       setEmailInput(value);
-      // 이미 건드린 필드라면, 입력할 때마다 실시간으로 에러를 다시 검사
       if (touched.email) {
         setErrors((prev) => ({ ...prev, email: validateEmail(value) }));
       }
     }
-    if (name === 'password') {
+    if (name === "password") {
       setPasswordInput(value);
       if (touched.password) {
-        setErrors((prev) => ({ ...prev, password: validatePassword(value) }));
+        setErrors((prev) => ({
+          ...prev,
+          password: validatePassword(value),
+        }));
       }
     }
   };
 
-  // 'handleSubmit'을 강력한 유효성 검사 로직으로 교체
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
-    
-    // 모든 필드를 '건드린' 것으로 처리 (에러 메시지 즉시 표시)
+
     setTouched({ email: true, password: true });
-    
-    // 유효성 검사 실행
+
     const emailError = validateEmail(emailInput);
     const passwordError = validatePassword(passwordInput);
 
@@ -103,47 +103,69 @@ export default function LoginPage() {
     if (emailError) newErrors.email = emailError;
     if (passwordError) newErrors.password = passwordError;
 
-    // 만약 프론트 Validation 에러가 있다면 (빈 칸 등), 여기서 중단
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
 
-    // (가상) API
     setIsSubmitting(true);
-    setErrors({}); // 이전 에러 초기화
+    setErrors({});
 
-    // --- (가상) 백엔드 검증 ---
-    // 1초 딜레이 (네트워크 호출 흉내)
-    setTimeout(() => {
-      // 1. 이메일 존재 여부 확인
-      // @ts-ignore
-      const user = MOCK_USERS[emailInput];
-      
-      if (!user) {
-        // 존재하지 않는 이메일
-        setErrors({ email: '존재하지 않는 이메일입니다.' });
-        setIsSubmitting(false);
-        return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailInput,
+          password: passwordInput,
+        }),
+      });
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          setErrors({ email: "존재하지 않는 이메일입니다." });
+          toast.error("존재하지 않는 이메일입니다.");
+          return;
+        }
+        if (res.status === 401) {
+          setErrors({ password: "잘못된 비밀번호입니다." });
+          toast.error("비밀번호가 올바르지 않습니다.");
+          return;
+        }
+        if (res.status === 400) {
+          toast.error("로그인 요청이 올바르지 않습니다.");
+          return;
+        }
+        throw new Error("서버 오류");
       }
 
-      // 비밀번호 일치 여부
-      if (user.password !== passwordInput) {
-        setErrors({ password: '잘못된 비밀번호입니다.' });
-        setIsSubmitting(false);
-        return;
-      }
+      const data = await res.json();
+      // 백엔드 응답 형식:
+      // {
+      //   user: { id, email, name, role },
+      //   tokens: { access_token, refresh_token, token_type, expires_in }
+      // }
+      const { user, tokens } = data;
 
-      // 로그인 성공
-      login(user.name, emailInput, passwordInput, user.role);
+      // 필요하면 토큰을 저장
+      // localStorage.setItem("access_token", tokens.access_token);
+      // localStorage.setItem("refresh_token", tokens.refresh_token);
+
+      // Zustand store에 로그인 상태 반영
+      login(user.name, user.email, passwordInput, user.role);
+
       toast.success(`${user.name}님 환영합니다!`);
+      navigate("/dashboard");
+    } catch (error) {
+      console.error(error);
+      toast.error("로그인 중 서버 오류가 발생했습니다.");
+    } finally {
       setIsSubmitting(false);
-    }, 1000);
+    }
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#F8FBFB] p-4">
-      
       {/* 상단 로고 */}
       <div className="flex flex-col items-center mb-8">
         <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-md mb-3">
@@ -158,7 +180,10 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit}>
           {/* 이메일 입력 */}
           <div className="mb-4">
-            <label className="block text-sm font-bold text-dark-gray mb-2" htmlFor="email">
+            <label
+              className="block text-sm font-bold text-dark-gray mb-2"
+              htmlFor="email"
+            >
               이메일
             </label>
             <div className="relative">
@@ -174,7 +199,6 @@ export default function LoginPage() {
                 className="w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
               />
             </div>
-            {/* 에러 메시지 */}
             {touched.email && errors.email && (
               <p className="text-red-500 text-xs mt-1">{errors.email}</p>
             )}
@@ -182,7 +206,10 @@ export default function LoginPage() {
 
           {/* 비밀번호 입력 */}
           <div className="mb-6">
-            <label className="block text-sm font-bold text-dark-gray mb-2" htmlFor="password">
+            <label
+              className="block text-sm font-bold text-dark-gray mb-2"
+              htmlFor="password"
+            >
               비밀번호
             </label>
             <div className="relative">
@@ -198,7 +225,6 @@ export default function LoginPage() {
                 className="w-full pl-10 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
               />
             </div>
-            {/* 에러 메시지 */}
             {touched.password && errors.password && (
               <p className="text-red-500 text-xs mt-1">{errors.password}</p>
             )}
@@ -207,10 +233,10 @@ export default function LoginPage() {
           {/* 로그인 버튼 */}
           <button
             type="submit"
-            disabled={isSubmitting} 
+            disabled={isSubmitting}
             className="w-full bg-mint hover:bg-mint-dark text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-200 disabled:bg-gray-400"
           >
-            로그인
+            {isSubmitting ? "로그인 중..." : "로그인"}
           </button>
         </form>
 
@@ -220,15 +246,19 @@ export default function LoginPage() {
             회원가입
           </Link>
           <span className="mx-2 text-gray-300">|</span>
-          <button onClick={openModal} className="text-sm text-gray-500 hover:text-mint">
+          <button
+            onClick={openModal}
+            className="text-sm text-gray-500 hover:text-mint"
+          >
             비밀번호 찾기
           </button>
         </div>
       </div>
+
       <p className="text-center text-gray-400 text-xs mt-8">
         © 2025 메디노트. 보는 건강 데이터는 안전하게 보호됩니다.
       </p>
-      {/* 모달 조건부 렌더링 */}
+
       {isModalOpen && <FindPasswordModal onClose={closeModal} />}
     </div>
   );
