@@ -11,6 +11,7 @@ import AppLayout from './components/common/AppLayout';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import AdminLayout from './components/admin/AdminLayout';
 import AdminRoute from './components/admin/AdminRoute';
+import useUserStore from './store/useUserStore';
 
 
 import LoginPage from './pages/Auth/LoginPage';
@@ -31,6 +32,12 @@ import FeedbackManagementPage from './pages/admin/FeedbackManagementPage';
 
 function App() {
   const updateCurrentDate = useHealthDataStore((s) => s.updateCurrentDate);
+  const loadAuthFromStorage = useUserStore((s) => s.loadAuthFromStorage);
+
+  useEffect(() => {
+    loadAuthFromStorage();
+  }, [loadAuthFromStorage]);
+
   useEffect(() => {
     const tick = () => {
       updateCurrentDate(kstYmd());

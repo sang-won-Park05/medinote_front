@@ -1,3 +1,5 @@
+// src/pages/Auth/LoginPage.tsx
+
 import React, {
   useState,
   useEffect,
@@ -11,8 +13,8 @@ import FindPasswordModal from "../../components/domain/Auth/FindPasswordModal";
 import useUserStore from "../../store/useUserStore";
 import { toast } from "react-toastify";
 
-// ✅ Vite 기준 API 베이스 URL
-import { API_BASE_URL } from "../../utils/config";
+// ✅ authAPI 사용
+import { login as loginAPI } from "../../api/authAPI";
 
 type LoginFormErrors = {
   email?: string;
@@ -38,17 +40,19 @@ export default function LoginPage() {
   const [errors, setErrors] = useState<LoginFormErrors>({});
   const [touched, setTouched] = useState({ email: false, password: false });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { login, isLoggedIn, role } = useUserStore();
+
+  // ✅ 새 useUserStore 구조에 맞게
+  const { isLoggedIn, user, setAuth } = useUserStore();
 
   useEffect(() => {
-    if (isLoggedIn) {
-      if (role === "admin") {
+    if (isLoggedIn && user) {
+      if (user.role === "admin") {
         navigate("/admin");
       } else {
         navigate("/dashboard");
       }
     }
-  }, [isLoggedIn, role, navigate]);
+  }, [isLoggedIn, user, navigate]);
 
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => setIsModalOpen(false);
@@ -112,53 +116,37 @@ export default function LoginPage() {
     setErrors({});
 
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: emailInput,
-          password: passwordInput,
-        }),
+      // ✅ authAPI.login 사용
+      const { user, tokens } = await loginAPI({
+        email: emailInput,
+        password: passwordInput,
       });
 
-      if (!res.ok) {
-        if (res.status === 404) {
-          setErrors({ email: "존재하지 않는 이메일입니다." });
-          toast.error("존재하지 않는 이메일입니다.");
-          return;
-        }
-        if (res.status === 401) {
-          setErrors({ password: "잘못된 비밀번호입니다." });
-          toast.error("비밀번호가 올바르지 않습니다.");
-          return;
-        }
-        if (res.status === 400) {
-          toast.error("로그인 요청이 올바르지 않습니다.");
-          return;
-        }
-        throw new Error("서버 오류");
-      }
-
-      const data = await res.json();
-      // 백엔드 응답 형식:
-      // {
-      //   user: { id, email, name, role },
-      //   tokens: { access_token, refresh_token, token_type, expires_in }
-      // }
-      const { user, tokens } = data;
-
-      // 필요하면 토큰을 저장
-      // localStorage.setItem("access_token", tokens.access_token);
-      // localStorage.setItem("refresh_token", tokens.refresh_token);
-
-      // Zustand store에 로그인 상태 반영
-      login(user.name, user.email, passwordInput, user.role);
+      // ✅ Zustand에 토큰 + 유저 저장
+      setAuth(user, tokens);
 
       toast.success(`${user.name}님 환영합니다!`);
-      navigate("/dashboard");
-    } catch (error) {
-      console.error(error);
-      toast.error("로그인 중 서버 오류가 발생했습니다.");
+
+      if (user.role === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/dashboard");
+      }
+    } catch (error: any) {
+      const status = error?.response?.status;
+
+      if (status === 404) {
+        setErrors({ email: "존재하지 않는 이메일입니다." });
+        toast.error("존재하지 않는 이메일입니다.");
+      } else if (status === 401) {
+        setErrors({ password: "잘못된 비밀번호입니다." });
+        toast.error("비밀번호가 올바르지 않습니다.");
+      } else if (status === 400) {
+        toast.error("로그인 요청이 올바르지 않습니다.");
+      } else {
+        console.error(error);
+        toast.error("로그인 중 서버 오류가 발생했습니다.");
+      }
     } finally {
       setIsSubmitting(false);
     }

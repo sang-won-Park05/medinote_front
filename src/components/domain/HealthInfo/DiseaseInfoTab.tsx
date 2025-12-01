@@ -1,48 +1,200 @@
 // src/components/domain/HealthInfo/DiseaseInfoTab.tsx
 
-import React, { useState } from 'react';
-import { HiOutlinePlus, HiOutlineFire, HiOutlineLightningBolt } from 'react-icons/hi';
-import DiseaseModal from './DiseaseModal';
-import DiseaseDetailModal from './DiseaseDetailModal';
-import useHealthDataStore, { type Disease } from '../../../store/useHealthDataStore';
+import React, { useState, useEffect } from "react";
+import { HiOutlinePlus, HiOutlineFire, HiOutlineLightningBolt } from "react-icons/hi";
+import DiseaseModal from "./DiseaseModal";
+import DiseaseDetailModal from "./DiseaseDetailModal";
+import useHealthDataStore, { type Disease } from "../../../store/useHealthDataStore";
+import useUserStore from "../../../store/useUserStore";
+import { toast } from "react-toastify";
+import {
+  getChronics,
+  getAcutes,
+  createChronic,
+  createAcute,
+  updateChronic,
+  updateAcute,
+  deleteChronic,
+  deleteAcute,
+  type ChronicResponse,
+  type AcuteResponse,
+} from "../../../api/healthAPI";
 
-type Filter = 'all' | 'chronic' | 'simple';
+type Filter = "all" | "chronic" | "simple";
 type ModalState = {
   isOpen: boolean;
-  defaultType: 'chronic' | 'simple';
+  defaultType: "chronic" | "simple";
 };
 
 export default function DiseaseInfoTab() {
-  const [filter, setFilter] = useState<Filter>('all');
-  const [modalState, setModalState] = useState<ModalState>({ isOpen: false, defaultType: 'chronic' });
+  const [filter, setFilter] = useState<Filter>("all");
+  const [modalState, setModalState] = useState<ModalState>({ isOpen: false, defaultType: "chronic" });
   const [selected, setSelected] = useState<Disease | null>(null);
   const diseases = useHealthDataStore((state) => state.diseases);
+  const userId = useUserStore((s) => s.user?.id);
 
-  const openModal = () => setModalState({ isOpen: true, defaultType: 'chronic' });
-  const closeModal = () => setModalState({ isOpen: false, defaultType: 'chronic' });
-  const filteredDiseases = diseases.filter(
-    (d) => filter === 'all' || filter === d.type
-  );
+  useEffect(() => {
+    const fetchDiseases = async () => {
+      try {
+        const [chronics, acutes] = await Promise.all([getChronics(), getAcutes()]);
+        const mapped: Disease[] = [
+          ...chronics.map(mapChronicToDisease),
+          ...acutes.map(mapAcuteToDisease),
+        ];
+        useHealthDataStore.setState({ diseases: mapped });
+      } catch (err) {
+        console.error("질환 목록 불러오기 실패:", err);
+        toast.error("질환 정보를 불러오지 못했습니다.");
+      }
+    };
+    fetchDiseases();
+  }, []);
+
+  useEffect(() => {
+    const addDisease = async (disease: Omit<Disease, "id">) => {
+      if (!userId) {
+        toast.error("로그인이 필요합니다.");
+        return;
+      }
+      try {
+        const mapped =
+          disease.type === "chronic"
+            ? mapChronicToDisease(
+                await createChronic({
+                  disease_name: disease.name,
+                  note: disease.meds,
+                  user_id: userId,
+                })
+              )
+            : mapAcuteToDisease(
+                await createAcute({
+                  disease_name: disease.name,
+                  note: disease.meds,
+                  user_id: userId,
+                })
+              );
+
+        useHealthDataStore.setState((state) => ({
+          diseases: [...state.diseases, mapped],
+        }));
+        toast.success("질환이 추가되었습니다.");
+      } catch (err) {
+        console.error("질환 추가 실패:", err);
+        toast.error("질환 추가에 실패했습니다.");
+      }
+    };
+
+    const updateDisease = async (id: string, patch: Partial<Omit<Disease, "id">>) => {
+      const current = useHealthDataStore.getState().diseases.find((d) => d.id === id);
+      if (!current) return;
+
+      const nextType = patch.type ?? current.type;
+      const nextName = patch.name ?? current.name;
+      const nextMeds = patch.meds ?? current.meds;
+
+      try {
+        if (nextType !== current.type) {
+          if (!userId) {
+            toast.error("로그인이 필요합니다.");
+            return;
+          }
+          if (current.type === "chronic") {
+            await deleteChronic(Number(id));
+          } else {
+            await deleteAcute(Number(id));
+          }
+
+          const recreated =
+            nextType === "chronic"
+              ? mapChronicToDisease(
+                  await createChronic({
+                    disease_name: nextName,
+                    note: nextMeds,
+                    user_id: userId,
+                  })
+                )
+              : mapAcuteToDisease(
+                  await createAcute({
+                    disease_name: nextName,
+                    note: nextMeds,
+                    user_id: userId,
+                  })
+                );
+
+          useHealthDataStore.setState((state) => ({
+            diseases: state.diseases.map((d) => (d.id === id ? recreated : d)),
+          }));
+        } else if (nextType === "chronic") {
+          await updateChronic(Number(id), { disease_name: nextName, note: nextMeds });
+          useHealthDataStore.setState((state) => ({
+            diseases: state.diseases.map((d) =>
+              d.id === id ? { ...d, name: nextName, meds: nextMeds, type: nextType } : d
+            ),
+          }));
+        } else {
+          await updateAcute(Number(id), { disease_name: nextName, note: nextMeds });
+          useHealthDataStore.setState((state) => ({
+            diseases: state.diseases.map((d) =>
+              d.id === id ? { ...d, name: nextName, meds: nextMeds, type: nextType } : d
+            ),
+          }));
+        }
+        toast.success("질환이 수정되었습니다.");
+      } catch (err) {
+        console.error("질환 수정 실패:", err);
+        toast.error("질환 수정에 실패했습니다.");
+      }
+    };
+
+    const deleteDisease = async (id: string) => {
+      const current = useHealthDataStore.getState().diseases.find((d) => d.id === id);
+      if (!current) return;
+      try {
+        if (current.type === "chronic") {
+          await deleteChronic(Number(id));
+        } else {
+          await deleteAcute(Number(id));
+        }
+        useHealthDataStore.setState((state) => ({
+          diseases: state.diseases.filter((d) => d.id !== id),
+        }));
+        toast.success("질환이 삭제되었습니다.");
+      } catch (err) {
+        console.error("질환 삭제 실패:", err);
+        toast.error("질환 삭제에 실패했습니다.");
+      }
+    };
+
+    useHealthDataStore.setState((state) => ({
+      ...state,
+      addDisease,
+      updateDisease,
+      deleteDisease,
+    }));
+  }, [userId]);
+
+  const openModal = () => setModalState({ isOpen: true, defaultType: "chronic" });
+  const closeModal = () => setModalState({ isOpen: false, defaultType: "chronic" });
+  const filteredDiseases = diseases.filter((d) => filter === "all" || filter === d.type);
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        {/* 필터 버튼 그룹 */}
         <div className="flex gap-2">
           <FilterButton 
             text="전체" 
-            isActive={filter === 'all'} 
-            onClick={() => setFilter('all')} 
+            isActive={filter === "all"} 
+            onClick={() => setFilter("all")} 
           />
           <FilterButton 
             text="만성질환" 
-            isActive={filter === 'chronic'} 
-            onClick={() => setFilter('chronic')} 
+            isActive={filter === "chronic"} 
+            onClick={() => setFilter("chronic")} 
           />
           <FilterButton 
             text="급성질병" 
-            isActive={filter === 'simple'} 
-            onClick={() => setFilter('simple')} 
+            isActive={filter === "simple"} 
+            onClick={() => setFilter("simple")} 
           />
         </div>
         <button 
@@ -53,7 +205,6 @@ export default function DiseaseInfoTab() {
         </button>
       </div>
 
-      {/* 질환정보 단일 리스트 */}
       <div className="space-y-3">
         {filteredDiseases.length > 0 ? (
           filteredDiseases.map((d) => (
@@ -61,14 +212,14 @@ export default function DiseaseInfoTab() {
               key={d.id} 
               name={d.name} 
               meds={d.meds} 
-              tag={d.type === 'chronic' ? '만성질환' : '급성질병'} 
-              tagColor={d.type === 'chronic' ? 'orange' : 'blue'} 
+              tag={d.type === "chronic" ? "만성질환" : "급성질병"} 
+              tagColor={d.type === "chronic" ? "orange" : "blue"} 
               onClick={() => setSelected(d)} 
             />
           ))
         ) : (
           <p className="text-sm text-gray-400 text-center p-4">
-            {filter === 'all' ? '추가된 질환정보가 없습니다.' : '해당 유형의 질환정보가 없습니다.'}
+            {filter === "all" ? "추가된 질환 정보가 없습니다." : "해당 유형의 질환 정보가 없습니다."}
           </p>
         )}
       </div>
@@ -78,7 +229,6 @@ export default function DiseaseInfoTab() {
   );
 }
 
-// '약정보' 탭에서 가져온 FilterButton 서브 컴포넌트
 type FilterButtonProps = {
   text: string;
   isActive: boolean;
@@ -90,7 +240,7 @@ function FilterButton({ text, isActive, onClick }: FilterButtonProps) {
     <button
       onClick={onClick}
       className={`px-3 py-1 text-sm font-semibold rounded-full ${
-        isActive ? 'bg-mint text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+        isActive ? "bg-mint text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
       }`}
     >
       {text}
@@ -98,21 +248,21 @@ function FilterButton({ text, isActive, onClick }: FilterButtonProps) {
   );
 }
 
-// --- 서브 컴포넌트: DiseaseItem ---
 type ItemProps = {
   name: string;
   meds: string;
   tag: string;
-  tagColor: 'orange' | 'blue';
+  tagColor: "orange" | "blue";
   onClick?: () => void;
 };
 
 function DiseaseItem({ name, meds, tag, tagColor, onClick }: ItemProps) {
-  const tagClass = tagColor === 'orange' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600';
-  const medList = meds ? meds.split(',').map(m => m.trim()).filter(m => m.length > 0) : [];
-  const iconData = tagColor === 'orange' 
-    ? { icon: <HiOutlineFire />, color: 'text-orange-500' } // 만성질환
-    : { icon: <HiOutlineLightningBolt />, color: 'text-blue-500' }; // 급성질병
+  const tagClass = tagColor === "orange" ? "bg-orange-100 text-orange-600" : "bg-blue-100 text-blue-600";
+  const medList = meds ? meds.split(",").map((m) => m.trim()).filter((m) => m.length > 0) : [];
+  const iconData =
+    tagColor === "orange"
+      ? { icon: <HiOutlineFire />, color: "text-orange-500" }
+      : { icon: <HiOutlineLightningBolt />, color: "text-blue-500" };
 
   return (
     <div className="flex gap-4 items-start bg-white p-3 rounded-md shadow-sm cursor-pointer hover:bg-gray-50" onClick={onClick}>
@@ -141,3 +291,20 @@ function DiseaseItem({ name, meds, tag, tagColor, onClick }: ItemProps) {
   );
 }
 
+function mapChronicToDisease(item: ChronicResponse): Disease {
+  return {
+    id: String(item.chronic_id),
+    name: item.disease_name,
+    type: "chronic",
+    meds: item.note,
+  };
+}
+
+function mapAcuteToDisease(item: AcuteResponse): Disease {
+  return {
+    id: String(item.acute_id),
+    name: item.disease_name,
+    type: "simple",
+    meds: item.note,
+  };
+}

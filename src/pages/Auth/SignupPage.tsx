@@ -15,8 +15,8 @@ import { toast } from "react-toastify";
 
 import FindPasswordModal from "../../components/domain/Auth/FindPasswordModal";
 
-// 기존: const API_BASE_URL = import.meta.env.VITE_API_URL;
-import { API_BASE_URL } from "../../utils/config";
+// ✅ authAPI 사용
+import { signup as signupAPI } from "../../api/authAPI";
 
 export default function SignupPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -142,8 +142,8 @@ export default function SignupPage() {
                     </p>
                     <p className="mt-2">
                       사용자가 부정확하거나 오래된 정보를 입력함으로써 발생하는
-                      결과, 오류, 또는 불이익에 대해서는 전적으로 사용자 본인에게
-                      책임이 있습니다.
+                      결과, 오류, 또는 불이익에 대해서는 전적으로 사용자
+                      본인에게 책임이 있습니다.
                     </p>
                     <p className="mt-2">
                       회사는 사용자가 입력한 데이터의 정확성, 완전성, 최신성에
@@ -190,7 +190,7 @@ export default function SignupPage() {
             <button
               disabled={!canProceed}
               onClick={() => setStep("form")}
-              className={`w-full mt-5 font-bold py-3 px-4 rounded-lg transition-colors duration-200 ${
+              className={`w-full mt-5 font-bold py-3 px-4 rounded-lg transition-colors	duration-200 ${
                 canProceed
                   ? "bg-mint hover:bg-mint-dark text-white"
                   : "bg-gray-200 text-gray-400 cursor-not-allowed"
@@ -314,7 +314,7 @@ function SignupForm({ onBack }: { onBack: () => void }) {
     if (touched.name) setFieldError("name", validateName(v));
   };
 
-  // ✅ 회원가입 API 호출(fetch 사용)
+  // ✅ 회원가입 API 호출(authAPI 사용)
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
@@ -335,42 +335,26 @@ function SignupForm({ onBack }: { onBack: () => void }) {
     setSubmitting(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/auth/signup`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-          name,
-        }),
+      await signupAPI({
+        email,
+        password,
+        name,
       });
-
-      if (!res.ok) {
-        if (res.status === 409) {
-          // 이메일 중복 같은 케이스
-          setFieldError("email", "이미 등록된 이메일입니다.");
-          toast.error("이미 사용 중인 이메일입니다.");
-          return;
-        }
-        if (res.status === 400) {
-          toast.error("회원가입 정보가 올바르지 않습니다.");
-          return;
-        }
-        throw new Error("서버 오류");
-      }
-
-      // 필요하면 응답 body 파싱
-      // const data = await res.json();
 
       toast.success("회원가입이 완료되었습니다. 로그인해 주세요.");
       navigate("/login");
-      // 또는 이메일 인증 페이지 사용 시:
-      // navigate("/verify-email");
-    } catch (error) {
-      console.error(error);
-      toast.error("서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+    } catch (error: any) {
+      const status = error?.response?.status;
+
+      if (status === 409) {
+        setFieldError("email", "이미 등록된 이메일입니다.");
+        toast.error("이미 사용 중인 이메일입니다.");
+      } else if (status === 400) {
+        toast.error("회원가입 정보가 올바르지 않습니다.");
+      } else {
+        console.error(error);
+        toast.error("서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+      }
     } finally {
       setSubmitting(false);
     }
