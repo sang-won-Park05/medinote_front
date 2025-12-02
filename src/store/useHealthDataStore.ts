@@ -1,11 +1,12 @@
 // src/store/useHealthDataStore.ts
 
-import { create } from 'zustand';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 // 기본정보 타입
 interface BasicInfoForm {
   birth: string;
-  gender: '남성' | '여성';
+  gender: "남성" | "여성";
   height: string;
   weight: string;
   bloodType: string;
@@ -17,7 +18,7 @@ interface BasicInfoForm {
 export interface Disease {
   id: string;
   name: string;
-  type: 'chronic' | 'simple';
+  type: "chronic" | "simple";
   meds: string;
 }
 
@@ -25,13 +26,13 @@ export interface Disease {
 export interface Medication {
   id: string;
   name: string;
-  type: 'prescription' | 'supplement';
-  dosageForm: '캡슐' | '정제' | '액상';
+  type: "prescription" | "supplement";
+  dosageForm: "캡슐" | "정제" | "액상";
   dose: string;
   unit: string;
-  schedule: string; // 다중 선택 가능
-  startDate: string;
-  endDate: string;
+  schedule: string; // 예: "아침, 저녁"
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
 }
 
 // 알러지 타입
@@ -50,65 +51,148 @@ interface HealthDataState {
 
   // Actions
   updateBasicInfo: (newInfo: BasicInfoForm) => void;
-  addDisease: (disease: Omit<Disease, 'id'>) => void;
-  updateDisease: (id: string, patch: Partial<Omit<Disease, 'id'>>) => void;
+
+  addDisease: (disease: Omit<Disease, "id">) => void;
+  updateDisease: (
+    id: string,
+    patch: Partial<Omit<Disease, "id">>
+  ) => void;
   deleteDisease: (id: string) => void;
 
-  addMedication: (med: Omit<Medication, 'id'>) => void;
-  updateMedication: (id: string, patch: Partial<Omit<Medication, 'id'>>) => void;
+  addMedication: (med: Omit<Medication, "id">) => void;
+  updateMedication: (
+    id: string,
+    patch: Partial<Omit<Medication, "id">>
+  ) => void;
   deleteMedication: (id: string) => void;
 
-  addAllergy: (allergy: Omit<Allergy, 'id'>) => void;
-  updateAllergy: (id: string, patch: Partial<Omit<Allergy, 'id'>>) => void;
+  addAllergy: (allergy: Omit<Allergy, "id">) => void;
+  updateAllergy: (
+    id: string,
+    patch: Partial<Omit<Allergy, "id">>
+  ) => void;
   deleteAllergy: (id: string) => void;
 
   updateCurrentDate: (date: string) => void;
+
+  // 전체 리셋 (로그아웃 시 등)
+  resetAll: () => void;
 }
 
-const today = () => new Date().toISOString().split('T')[0];
+const today = () => new Date().toISOString().split("T")[0];
 
-const useHealthDataStore = create<HealthDataState>((set) => ({
-  basicInfo: {
-    birth: '1990-03-15', gender: '여성', height: '170', weight: '60',
-    bloodType: 'A+', smoke: '비흡연자', drink: '거의 안마심',
-  },
+const defaultBasicInfo: BasicInfoForm = {
+  birth: "",
+  gender: "여성",
+  height: "",
+  weight: "",
+  bloodType: "",
+  smoke: "",
+  drink: "",
+};
 
-  diseases: [
-    { id: 'd1', name: '고혈압', type: 'chronic', meds: '아모디핀' },
-    { id: 'd2', name: '당뇨병 2형', type: 'chronic', meds: '메트포르민' },
-    { id: 'd3', name: '감기', type: 'simple', meds: '' },
-  ],
+const useHealthDataStore = create<HealthDataState>()(
+  persist(
+    (set, get) => ({
+      // ✅ 초기 상태 (더미 데이터 제거)
+      basicInfo: defaultBasicInfo,
+      diseases: [],
+      medications: [],
+      allergies: [],
+      currentDate: today(),
 
-  medications: [
+      // ===== 기본 정보 =====
+      updateBasicInfo: (newInfo) => set({ basicInfo: newInfo }),
+
+      // ===== 질환 =====
+      addDisease: (disease) =>
+        set((state) => ({
+          diseases: [
+            ...state.diseases,
+            { id: `d_${Date.now()}`, ...disease },
+          ],
+        })),
+
+      updateDisease: (id, patch) =>
+        set((state) => ({
+          diseases: state.diseases.map((d) =>
+            d.id === id ? { ...d, ...patch } : d
+          ),
+        })),
+
+      deleteDisease: (id) =>
+        set((state) => ({
+          diseases: state.diseases.filter((d) => d.id !== id),
+        })),
+
+      // ===== 약 정보 =====
+      addMedication: (med) =>
+        set((state) => ({
+          medications: [
+            ...state.medications,
+            { id: `m_${Date.now()}`, ...med },
+          ],
+        })),
+
+      updateMedication: (id, patch) =>
+        set((state) => ({
+          medications: state.medications.map((m) =>
+            m.id === id ? { ...m, ...patch } : m
+          ),
+        })),
+
+      deleteMedication: (id) =>
+        set((state) => ({
+          medications: state.medications.filter(
+            (m) => m.id !== id
+          ),
+        })),
+
+      // ===== 알러지 =====
+      addAllergy: (allergy) =>
+        set((state) => ({
+          allergies: [
+            ...state.allergies,
+            { id: `a_${Date.now()}`, ...allergy },
+          ],
+        })),
+
+      updateAllergy: (id, patch) =>
+        set((state) => ({
+          allergies: state.allergies.map((a) =>
+            a.id === id ? { ...a, ...patch } : a
+          ),
+        })),
+
+      deleteAllergy: (id) =>
+        set((state) => ({
+          allergies: state.allergies.filter((a) => a.id !== id),
+        })),
+
+      // ===== 기타 =====
+      updateCurrentDate: (date) => set({ currentDate: date }),
+
+      resetAll: () =>
+        set({
+          basicInfo: defaultBasicInfo,
+          diseases: [],
+          medications: [],
+          allergies: [],
+          currentDate: today(),
+        }),
+    }),
     {
-      id: 'm1', name: '아모디핀', type: 'prescription', dosageForm: '정제',
-      dose: '5', unit: 'mg', schedule: '아침, 저녁', startDate: today(), endDate: today(),
-    },
-  ],
-
-  allergies: [
-    { id: 'a1', name: '피넛' },
-  ],
-
-  currentDate: today(),
-
-  // Actions
-  updateBasicInfo: (newInfo) => set({ basicInfo: newInfo }),
-
-  addDisease: (disease) => set((state) => ({ diseases: [...state.diseases, { id: `d_${Date.now()}`, ...disease }] })),
-  updateDisease: (id, patch) => set((state) => ({ diseases: state.diseases.map((d) => (d.id === id ? { ...d, ...patch } : d)) })),
-  deleteDisease: (id) => set((state) => ({ diseases: state.diseases.filter((d) => d.id !== id) })),
-
-  addMedication: (med) => set((state) => ({ medications: [...state.medications, { id: `m_${Date.now()}`, ...med }] })),
-  updateMedication: (id, patch) => set((state) => ({ medications: state.medications.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
-  deleteMedication: (id) => set((state) => ({ medications: state.medications.filter((m) => m.id !== id) })),
-
-  addAllergy: (allergy) => set((state) => ({ allergies: [...state.allergies, { id: `a_${Date.now()}`, ...allergy }] })),
-  updateAllergy: (id, patch) => set((state) => ({ allergies: state.allergies.map((a) => (a.id === id ? { ...a, ...patch } : a)) })),
-  deleteAllergy: (id) => set((state) => ({ allergies: state.allergies.filter((a) => a.id !== id) })),
-
-  updateCurrentDate: (date) => set({ currentDate: date }),
-}));
+      name: "medinote_health", // 🔐 localStorage key
+      // 필요하면 저장 범위 제한 가능
+      partialize: (state) => ({
+        basicInfo: state.basicInfo,
+        diseases: state.diseases,
+        medications: state.medications,
+        allergies: state.allergies,
+        currentDate: state.currentDate,
+      }),
+    }
+  )
+);
 
 export default useHealthDataStore;
-

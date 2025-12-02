@@ -2,7 +2,6 @@
 
 import React, {
   useState,
-  useEffect,
   type ChangeEvent,
   type FormEvent,
 } from "react";
@@ -41,18 +40,8 @@ export default function LoginPage() {
   const [touched, setTouched] = useState({ email: false, password: false });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ✅ 새 useUserStore 구조에 맞게
-  const { isLoggedIn, user, setAuth } = useUserStore();
-
-  useEffect(() => {
-    if (isLoggedIn && user) {
-      if (user.role === "admin") {
-        navigate("/admin");
-      } else {
-        navigate("/dashboard");
-      }
-    }
-  }, [isLoggedIn, user, navigate]);
+  // ✅ Zustand에서 setAuth만 사용
+  const { setAuth } = useUserStore();
 
   const openModal = () => setIsModalOpen(true);
   const closeModal = () => setIsModalOpen(false);

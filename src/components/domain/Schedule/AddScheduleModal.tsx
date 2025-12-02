@@ -1,82 +1,151 @@
 // src/components/domain/Schedule/AddScheduleModal.tsx
 
-import React, { useState, type ChangeEvent, type FormEvent } from 'react';
-import { HiOutlineX } from 'react-icons/hi';
-import type { ScheduleItem, ScheduleType } from '../../../store/useScheduleStore';
-import { kstYmd } from '../../../utils/date';
+import React, { useState, useEffect } from "react";
+import type { ScheduleItem, ScheduleType } from "../../../store/useScheduleStore";
+import { toast } from "react-toastify";
 
-type ModalProps = {
+type AddScheduleModalProps = {
   onClose: () => void;
-  initial?: Partial<ScheduleItem> & { date?: string };
-  onSave: (item: Omit<ScheduleItem, 'id'>) => void;
+  initial: Partial<ScheduleItem>;
+  onSave: (payload: Omit<ScheduleItem, "id">) => Promise<void> | void;
 };
 
-export default function AddScheduleModal({ onClose, initial, onSave }: ModalProps) {
-  const localToday = () => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${dd}`;
-  };
-  const [form, setForm] = useState({
-    title: initial?.title || '',
-    type: (initial?.type as ScheduleType) || '진료',
-    date: initial?.date || kstYmd(),
-    time: initial?.time || '09:00',
-    location: initial?.location || '',
-  });
+const SCHEDULE_TYPES: ScheduleType[] = ["진료", "검진"];
 
-  const onChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm((p) => ({ ...p, [name]: value }));
-  };
+export default function AddScheduleModal({
+  onClose,
+  initial,
+  onSave,
+}: AddScheduleModalProps) {
+  const [title, setTitle] = useState(initial.title ?? "");
+  const [type, setType] = useState<ScheduleType>(initial.type ?? "진료");
+  const [date, setDate] = useState(initial.date ?? "");
+  const [time, setTime] = useState(initial.time ?? "09:00");
+  const [location, setLocation] = useState(initial.location ?? "");
+  const [memo, setMemo] = useState(initial.memo ?? "");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (e: FormEvent) => {
+  useEffect(() => {
+    if (initial.date) setDate(initial.date);
+  }, [initial.date]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.title.trim()) return;
-    onSave({ type: form.type as ScheduleType, title: form.title.trim(), date: form.date, time: form.time, location: form.location });
-    onClose();
+    if (!title.trim() || !date || !time) {
+      toast.error("제목, 날짜, 시간을 입력해주세요.");
+      return;
+    }
+    if (submitting) return;
+
+    try {
+      setSubmitting(true);
+      await onSave({
+        title: title.trim(),
+        type,
+        date,
+        time,
+        location: location.trim() || "",
+        memo: memo.trim() || "",
+      });
+      onClose();
+    } catch (err) {
+      console.error("일정 저장 실패:", err);
+      toast.error("일정 저장에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-lg shadow-popup p-6 z-50" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-xl font-bold text-dark-gray">일정 추가</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-dark-gray text-2xl">
-            <HiOutlineX />
-          </button>
-        </div>
-        <p className="text-sm text-gray-500 mb-6">진료 또는 검진 일정을 등록하세요.</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
+        <h2 className="text-lg font-bold text-dark-gray mb-1">일정 추가</h2>
+        <p className="text-xs text-gray-500 mb-4">진료 또는 검진 일정을 기록하세요</p>
 
-        <form className="space-y-4" onSubmit={submit}>
+        <form className="space-y-3" onSubmit={handleSubmit}>
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">제목 <span className="text-red-500">*</span></label>
-            <input name="title" type="text" placeholder="예: 내과 정기 검진" value={form.title} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+            <label className="block text-xs font-semibold mb-1">제목 *</label>
+            <input
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              placeholder="예: 내과 정기 검진"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
           </div>
+
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">유형 <span className="text-red-500">*</span></label>
-            <select name="type" value={form.type} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint bg-white">
-              <option value="진료">진료</option>
-              <option value="검사">검사</option>
+            <label className="block text-xs font-semibold mb-1">유형 *</label>
+            <select
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              value={type}
+              onChange={(e) => setType(e.target.value as ScheduleType)}
+            >
+              {SCHEDULE_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">날짜 <span className="text-red-500">*</span></label>
-              <input name="date" type="date" value={form.date} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-xs font-semibold mb-1">날짜 *</label>
+              <input
+                type="date"
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
             </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">시간 <span className="text-red-500">*</span></label>
-              <input name="time" type="time" value={form.time} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+            <div className="flex-1">
+              <label className="block text-xs font-semibold mb-1">시간 *</label>
+              <input
+                type="time"
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+              />
             </div>
           </div>
+
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">장소</label>
-            <input name="location" type="text" placeholder="예: 서울대학교병원" value={form.location} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+            <label className="block text-xs font-semibold mb-1">장소</label>
+            <input
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              placeholder="예: 서울대학교병원"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+            />
           </div>
-          <button type="submit" className="w-full bg-mint hover:bg-mint-dark text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-200 mt-6">저장</button>
+
+          <div>
+            <label className="block text-xs font-semibold mb-1">메모</label>
+            <textarea
+              className="w-full border rounded-lg px-3 py-2 text-sm resize-none h-20"
+              placeholder="예: 공복 채혈, 복용 금지 약"
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 border rounded-lg py-2 text-sm text-gray-600"
+              disabled={submitting}
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 bg-mint text-white rounded-lg py-2 text-sm font-semibold disabled:opacity-60"
+            >
+              {submitting ? "저장 중..." : "저장"}
+            </button>
+          </div>
         </form>
       </div>
     </div>

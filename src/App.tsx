@@ -24,7 +24,6 @@ import SchedulePage from './pages/Schedule/SchedulePage';
 import ChatbotPage from './pages/Chatbot/ChatbotPage';
 import SettingsPage from './pages/Settings/SettingsPage';
 import LandingPage from './pages/LandingPage';
-import EmailVerificationPage from './pages/Auth/EmailVerificationPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import UserManagementPage from './pages/admin/UserManagementPage';
 import FeedbackManagementPage from './pages/admin/FeedbackManagementPage';
@@ -54,8 +53,6 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
-          <Route path="/verify-email" element={<EmailVerificationPage />} />
-
 
           {/* Protected routes under layout (absolute paths) */}
           <Route element={<ProtectedRoute />}>

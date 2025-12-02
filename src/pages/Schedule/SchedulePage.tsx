@@ -1,13 +1,21 @@
 // src/pages/Schedule/SchedulePage.tsx
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar } from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import AddScheduleModal from '../../components/domain/Schedule/AddScheduleModal';
 import ScheduleDetailModal from '../../components/domain/Schedule/ScheduleDetailModal';
 import useScheduleStore, { type ScheduleItem } from '../../store/useScheduleStore';
 import { kstYmd } from '../../utils/date';
-import {HiOutlinePlus} from 'react-icons/hi';
+import { HiOutlinePlus } from 'react-icons/hi';
+import {
+  getSchedules,
+  createSchedule,
+  updateSchedule as updateScheduleAPI,
+  deleteSchedule as deleteScheduleAPI,
+  type ScheduleResponse,
+} from '../../api/schedule';
+import { toast } from 'react-toastify';
 
 type ValuePiece = Date | null;
 type Value = ValuePiece | [ValuePiece, ValuePiece];
@@ -18,17 +26,39 @@ export default function SchedulePage() {
   const [editItem, setEditItem] = useState<ScheduleItem | null>(null);
   const [detailItem, setDetailItem] = useState<ScheduleItem | null>(null);
 
-  const { schedules, addSchedule, updateSchedule, deleteSchedule } = useScheduleStore();
+  const { schedules } = useScheduleStore();
+  useEffect(() => {
+    const fetchSchedules = async () => {
+      try {
+        const data = await getSchedules();
+        useScheduleStore.setState({
+          schedules: data.map(mapScheduleResponseToItem),
+        });
+      } catch (err) {
+        console.error('일정 목록 불러오기 실패:', err);
+        toast.error('일정을 불러오지 못했습니다.');
+      }
+    };
+    fetchSchedules();
+  }, []);
 
   const selectedDateStr = date instanceof Date ? kstYmd(date) : '';
   const daySchedules = useMemo(
-    () => schedules.filter((s) => s.date === selectedDateStr).sort((a, b) => a.time.localeCompare(b.time)),
+    () =>
+      schedules
+        .filter((s) => s.date === selectedDateStr)
+        .sort((a, b) => a.time.localeCompare(b.time)),
     [schedules, selectedDateStr]
   );
 
-  const formattedDate = date instanceof Date
-    ? date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
-    : '날짜를 선택하세요';
+  const formattedDate =
+    date instanceof Date
+      ? date.toLocaleDateString('ko-KR', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      : '날짜를 선택하세요';
 
   return (
     <>
@@ -49,13 +79,11 @@ export default function SchedulePage() {
         .react-calendar__month-view__days__day--weekend {
           color: #ff5a5f;
         }
-        /* 선택된 날짜 색상 변경 (Mint) */
         .react-calendar__tile--active {
           background: #2bddb7 !important;
           color: white !important;
           border-radius: 8px;
         }
-        /* 오늘 날짜 표시 */
         .react-calendar__tile--now {
           background: #e6fcf8;
           color: #111;
@@ -64,34 +92,43 @@ export default function SchedulePage() {
       `}</style>
 
       <div className="flex flex-col p-4 pb-16 space-y-4">
-        <header className="w-full bg-mint/10 p-4 shadow-sm rounded-lg"><h2 className="text-xl font-bold text-dark-gray">일정관리</h2></header>
+        <header className="w-full bg-mint/10 p-4 shadow-sm rounded-lg">
+          <h2 className="text-xl font-bold text-dark-gray">일정관리</h2>
+        </header>
+
         <section className="flex flex-col gap-4">
-          
-          {/* 1. 캘린더 영역 */}
+          {/* 캘린더 */}
           <div className="w-full bg-white rounded-lg shadow-lg p-4 flex justify-center">
-            <Calendar 
-              onChange={setDate} 
-              value={date} 
-              locale="ko-KR" 
-              formatDay={(locale, d) => d.toLocaleString('en', { day: 'numeric' })} 
-              next2Label={null} // 년도 이동 버튼 숨김 (깔끔하게)
+            <Calendar
+              onChange={setDate}
+              value={date}
+              locale="ko-KR"
+              formatDay={(locale, d) =>
+                d.toLocaleString('en', { day: 'numeric' })
+              }
+              next2Label={null}
               prev2Label={null}
             />
           </div>
 
-          {/* 2. 일정 리스트 영역 */}
+          {/* 일정 리스트 */}
           <div className="w-full bg-white rounded-lg shadow-lg p-5">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold text-dark-gray">{formattedDate}</h3>
-              <button 
-                onClick={() => { setEditItem(null); setIsModalOpen(true); }} 
+              <h3 className="text-lg font-bold text-dark-gray">
+                {formattedDate}
+              </h3>
+
+              <button
+                onClick={() => {
+                  setEditItem(null);
+                  setIsModalOpen(true);
+                }}
                 className="flex items-center gap-1 text-sm bg-mint text-white px-4 py-2 rounded-lg font-semibold hover:bg-mint-dark transition-colors"
               >
                 <HiOutlinePlus /> 추가
               </button>
             </div>
-            
-            {/* 리스트 영역 최소 높이 확보 */}
+
             <div className="space-y-3 min-h-[200px]">
               {daySchedules.length > 0 ? (
                 daySchedules.map((s) => (
@@ -107,52 +144,118 @@ export default function SchedulePage() {
         </section>
       </div>
 
+      {/* 일정 추가 모달 */}
       {isModalOpen && (
         <AddScheduleModal
           onClose={() => setIsModalOpen(false)}
           initial={editItem || { date: selectedDateStr }}
-          onSave={(payload) => {
-            if (editItem) updateSchedule(editItem.id, payload);
-            else addSchedule(payload);
+          onSave={async (payload) => {
+            try {
+              if (editItem) {
+                const updated = await updateScheduleAPI(editItem.id, payload);
+                const mapped = mapScheduleResponseToItem(updated);
+                useScheduleStore.setState((state) => ({
+                  schedules: state.schedules.map((s) => (s.id === mapped.id ? mapped : s)),
+                }));
+                toast.success('일정이 수정되었습니다.');
+              } else {
+                const created = await createSchedule(payload);
+                const mapped = mapScheduleResponseToItem(created);
+                useScheduleStore.setState((state) => ({
+                  schedules: [...state.schedules, mapped],
+                }));
+                toast.success('일정이 추가되었습니다.');
+              }
+              setIsModalOpen(false);
+            } catch (err) {
+              console.error('일정 저장 실패:', err);
+              toast.error('일정 저장에 실패했습니다.');
+            }
           }}
         />
       )}
 
+      {/* 일정 상세 모달 */}
       {detailItem && (
         <ScheduleDetailModal
           item={detailItem}
           onClose={() => setDetailItem(null)}
-          onUpdate={(id, patch) => updateSchedule(id, patch)}
-          onDelete={(id) => deleteSchedule(id)}
+          onUpdate={async (id, patch) => {
+            try {
+              const updated = await updateScheduleAPI(id, patch);
+              const mapped = mapScheduleResponseToItem(updated);
+              useScheduleStore.setState((state) => ({
+                schedules: state.schedules.map((s) => (s.id === mapped.id ? mapped : s)),
+              }));
+              setDetailItem(mapped);
+              toast.success('일정이 수정되었습니다.');
+            } catch (err) {
+              console.error('일정 수정 실패:', err);
+              toast.error('일정 수정에 실패했습니다.');
+              throw err;
+            }
+          }}
+          onDelete={async (id) => {
+            try {
+              await deleteScheduleAPI(id);
+              useScheduleStore.setState((state) => ({
+                schedules: state.schedules.filter((s) => s.id !== id),
+              }));
+              toast.success('일정이 삭제되었습니다.');
+            } catch (err) {
+              console.error('일정 삭제 실패:', err);
+              toast.error('일정 삭제에 실패했습니다.');
+              throw err;
+            }
+          }}
         />
       )}
     </>
   );
 }
 
-function ScheduleRow({ item, onClick }: { item: ScheduleItem; onClick: () => void }) {
+function ScheduleRow({
+  item,
+  onClick,
+}: {
+  item: ScheduleItem;
+  onClick: () => void;
+}) {
   const isClinic = item.type === '진료';
+
   return (
-    <button 
-      onClick={onClick} 
+    <button
+      onClick={onClick}
       className={`w-full flex items-center p-4 rounded-xl transition-all hover:shadow-md border ${
         isClinic ? 'bg-blue-50 border-blue-100' : 'bg-green-50 border-green-100'
       }`}
     >
-      {/* 시간 영역 */}
-      <div className={`w-16 text-lg font-bold text-left ${isClinic ? 'text-blue-600' : 'text-green-600'}`}>
+      {/* 시간 */}
+      <div
+        className={`w-16 text-lg font-bold text-left ${
+          isClinic ? 'text-blue-600' : 'text-green-600'
+        }`}
+      >
         {item.time}
       </div>
-      
+
       {/* 구분선 */}
       <div className="w-[1px] h-8 bg-gray-300 mx-4"></div>
-      
-      {/* 내용 영역 */}
+
+      {/* 내용 */}
       <div className="flex-1 text-left">
         <div className="font-bold text-dark-gray text-base">{item.title}</div>
+
         {item.location && (
           <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
             @ {item.location}
+          </div>
+        )}
+
+        {/* 🔥 메모 표시 추가됨 */}
+        {item.memo && (
+          <div className="text-xs text-gray-400 mt-1 truncate">
+            {item.memo}
           </div>
         )}
       </div>
@@ -160,3 +263,14 @@ function ScheduleRow({ item, onClick }: { item: ScheduleItem; onClick: () => voi
   );
 }
 
+function mapScheduleResponseToItem(item: ScheduleResponse): ScheduleItem {
+  return {
+    id: item.id,
+    title: item.title,
+    type: item.type as ScheduleItem['type'],
+    date: item.date,
+    time: item.time,
+    location: item.location || undefined,
+    memo: item.memo || undefined,
+  };
+}

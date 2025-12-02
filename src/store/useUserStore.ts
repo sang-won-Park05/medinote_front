@@ -145,7 +145,7 @@ const useUserStore = create<UserState>((set, get) => ({
 
   // ============================
   // 앱 시작 시 LocalStorage → 메모리 복원
-  // (App.tsx useEffect 등에서 한 번 호출)
+  // (이제 스토어가 로드될 때 자동으로도 돌게 함)
   // ============================
   loadAuthFromStorage: () => {
     try {
@@ -256,5 +256,8 @@ const useUserStore = create<UserState>((set, get) => ({
     }
   },
 }));
+
+// ✅ 스토어가 최초로 import 될 때, 한 번 로컬스토리지에서 복원 실행
+useUserStore.getState().loadAuthFromStorage();
 
 export default useUserStore;
