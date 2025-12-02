@@ -24,15 +24,17 @@ export interface Disease {
 
 // 약 정보 타입
 export interface Medication {
+  // ✅ 백엔드에서 내려오는 id(drug_id, prescription_id)를 문자열로 변환해서 사용
   id: string;
   name: string;
   type: "prescription" | "supplement";
-  dosageForm: "캡슐" | "정제" | "액상";
+  // 🔧 백엔드/프론트 옵션(캡슐, 정제, 시럽 등)을 모두 수용할 수 있게 string 으로 완화
+  dosageForm: string;
   dose: string;
   unit: string;
-  schedule: string; // 예: "아침, 저녁"
-  startDate: string; // YYYY-MM-DD
-  endDate: string;   // YYYY-MM-DD
+  schedule: string;   // 예: "아침, 저녁"
+  startDate: string;  // YYYY-MM-DD
+  endDate: string;    // YYYY-MM-DD
 }
 
 // 알러지 타입
@@ -53,24 +55,16 @@ interface HealthDataState {
   updateBasicInfo: (newInfo: BasicInfoForm) => void;
 
   addDisease: (disease: Omit<Disease, "id">) => void;
-  updateDisease: (
-    id: string,
-    patch: Partial<Omit<Disease, "id">>
-  ) => void;
+  updateDisease: (id: string, patch: Partial<Omit<Disease, "id">>) => void;
   deleteDisease: (id: string) => void;
 
-  addMedication: (med: Omit<Medication, "id">) => void;
-  updateMedication: (
-    id: string,
-    patch: Partial<Omit<Medication, "id">>
-  ) => void;
+  // ✅ 약은 이제 id까지 포함해서 통째로 넘겨 받는다 (백엔드 id 그대로 사용)
+  addMedication: (med: Medication) => void;
+  updateMedication: (id: string, patch: Partial<Omit<Medication, "id">>) => void;
   deleteMedication: (id: string) => void;
 
   addAllergy: (allergy: Omit<Allergy, "id">) => void;
-  updateAllergy: (
-    id: string,
-    patch: Partial<Omit<Allergy, "id">>
-  ) => void;
+  updateAllergy: (id: string, patch: Partial<Omit<Allergy, "id">>) => void;
   deleteAllergy: (id: string) => void;
 
   updateCurrentDate: (date: string) => void;
@@ -126,12 +120,10 @@ const useHealthDataStore = create<HealthDataState>()(
         })),
 
       // ===== 약 정보 =====
+      // ✅ id 는 외부에서 전달된 값을 그대로 사용 (더 이상 여기서 m_... 생성 안 함)
       addMedication: (med) =>
         set((state) => ({
-          medications: [
-            ...state.medications,
-            { id: `m_${Date.now()}`, ...med },
-          ],
+          medications: [...state.medications, med],
         })),
 
       updateMedication: (id, patch) =>
@@ -143,9 +135,7 @@ const useHealthDataStore = create<HealthDataState>()(
 
       deleteMedication: (id) =>
         set((state) => ({
-          medications: state.medications.filter(
-            (m) => m.id !== id
-          ),
+          medications: state.medications.filter((m) => m.id !== id),
         })),
 
       // ===== 알러지 =====
@@ -183,7 +173,6 @@ const useHealthDataStore = create<HealthDataState>()(
     }),
     {
       name: "medinote_health", // 🔐 localStorage key
-      // 필요하면 저장 범위 제한 가능
       partialize: (state) => ({
         basicInfo: state.basicInfo,
         diseases: state.diseases,

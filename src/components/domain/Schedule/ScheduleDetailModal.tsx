@@ -8,38 +8,83 @@ import { toast } from "react-toastify";
 type Props = {
   item: ScheduleItem;
   onClose: () => void;
-  onUpdate: (id: string, patch: Partial<Omit<ScheduleItem, "id">>) => Promise<void> | void;
+  // ✅ PATCH에서는 title/date/time/location/memo만 보낸다
+  onUpdate: (
+    id: string,
+    patch: Partial<
+      Pick<ScheduleItem, "title" | "date" | "time" | "location" | "memo">
+    >
+  ) => Promise<void> | void;
   onDelete: (id: string) => Promise<void> | void;
 };
 
-export default function ScheduleDetailModal({ item, onClose, onUpdate, onDelete }: Props) {
+// 폼 상태용 타입: Optional 안 쓰고 전부 string으로 고정
+type FormState = {
+  title: string;
+  type: ScheduleType;
+  date: string;
+  time: string;
+  location: string;
+  memo: string;
+};
+
+export default function ScheduleDetailModal({
+  item,
+  onClose,
+  onUpdate,
+  onDelete,
+}: Props) {
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState<Omit<ScheduleItem, "id">>({
+  const [form, setForm] = useState<FormState>({
     title: item.title,
     type: item.type,
     date: item.date,
     time: item.time,
-    location: item.location,
-    memo: item.memo,
+    location: item.location ?? "",
+    memo: item.memo ?? "",
   });
   const [loading, setLoading] = useState(false);
 
   const onChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setForm((p) => ({ ...p, [name]: value }));
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (loading) return;
+
+    if (!form.title.trim() || !form.date || !form.time) {
+      toast.error("제목, 날짜, 시간을 입력해주세요.");
+      return;
+    }
+
     try {
       setLoading(true);
-      await onUpdate(item.id, { ...form, type: form.type as ScheduleType });
+
+      const patch = {
+        title: form.title.trim(),
+        date: form.date,
+        time: form.time,
+        location: form.location.trim(),
+        memo: form.memo.trim(),
+      };
+
+      console.log("🔼 PATCH payload (DetailModal):", patch);
+
+      await onUpdate(item.id, patch);
+
       toast.success("일정이 수정되었습니다.");
       setEditing(false);
       onClose();
-    } catch (err) {
-      console.error("일정 수정 실패:", err);
+    } catch (err: any) {
+      console.error("일정 수정 실패 raw:", err);
+      if (err.response) {
+        console.error(
+          "🔻 422 detail JSON:",
+          JSON.stringify(err.response.data, null, 2)
+        );
+      }
       toast.error("일정 수정에 실패했습니다.");
     } finally {
       setLoading(false);
@@ -63,11 +108,20 @@ export default function ScheduleDetailModal({ item, onClose, onUpdate, onDelete 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="w-full max-w-md bg-white rounded-lg shadow-popup p-6 z-50" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md bg-white rounded-lg shadow-popup p-6 z-50"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex justify-between items-center mb-2">
           <h2 className="text-xl font-bold text-dark-gray">일정 상세</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-dark-gray text-2xl">
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-dark-gray text-2xl"
+          >
             <HiOutlineX />
           </button>
         </div>
@@ -83,44 +137,114 @@ export default function ScheduleDetailModal({ item, onClose, onUpdate, onDelete 
             {item.location && <DetailRow label="장소" value={item.location} />}
             {item.memo && <DetailRow label="메모" value={item.memo} />}
             <div className="grid grid-cols-2 gap-3 mt-4">
-              <button onClick={() => setEditing(true)} className="bg-mint hover:bg-mint-dark text-white font-bold py-3 px-4 rounded-lg">수정</button>
-              <button onClick={remove} className="border border-red-300 text-red-500 hover:bg-red-50 font-bold py-3 px-4 rounded-lg" disabled={loading}>삭제</button>
+              <button
+                onClick={() => setEditing(true)}
+                className="bg-mint hover:bg-mint-dark text-white font-bold py-3 px-4 rounded-lg"
+              >
+                수정
+              </button>
+              <button
+                onClick={remove}
+                className="border border-red-300 text-red-500 hover:bg-red-50 font-bold py-3 px-4 rounded-lg"
+                disabled={loading}
+              >
+                삭제
+              </button>
             </div>
           </div>
         ) : (
           <form className="space-y-4" onSubmit={submit}>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">제목</label>
-              <input name="title" value={form.title} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+              <label className="block text-sm font-bold text-gray-700 mb-1">
+                제목
+              </label>
+              <input
+                name="title"
+                value={form.title}
+                onChange={onChange}
+                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
+              />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">유형</label>
-              <select name="type" value={form.type} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint bg-white">
+              <label className="block text-sm font-bold text-gray-700 mb-1">
+                유형
+              </label>
+              <select
+                name="type"
+                value={form.type}
+                onChange={onChange}
+                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint bg-white"
+                disabled
+              >
                 <option value="진료">진료</option>
                 <option value="검진">검진</option>
               </select>
+              {/* type은 UI에서만 표시, PATCH에는 안 보냄 */}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">날짜</label>
-                <input name="date" type="date" value={form.date} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  날짜
+                </label>
+                <input
+                  name="date"
+                  type="date"
+                  value={form.date}
+                  onChange={onChange}
+                  className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
+                />
               </div>
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">시간</label>
-                <input name="time" type="time" value={form.time} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  시간
+                </label>
+                <input
+                  name="time"
+                  type="time"
+                  value={form.time}
+                  onChange={onChange}
+                  className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
+                />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">장소</label>
-              <input name="location" value={form.location || ''} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+              <label className="block text-sm font-bold text-gray-700 mb-1">
+                장소
+              </label>
+              <input
+                name="location"
+                value={form.location}
+                onChange={onChange}
+                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
+              />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">메모</label>
-              <input name="memo" value={form.memo || ''} onChange={onChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+              <label className="block text-sm font-bold text-gray-700 mb-1">
+                메모
+              </label>
+              <input
+                name="memo"
+                value={form.memo}
+                onChange={onChange}
+                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3 mt-2">
-              <button type="button" onClick={() => setEditing(false)} className="py-3 border rounded-lg hover:bg-gray-100 text-gray-700" disabled={loading}>취소</button>
-              <button type="submit" className="bg-mint hover:bg-mint-dark text-white font-bold py-3 px-4 rounded-lg" disabled={loading}>{loading ? '저장 중...' : '저장'}</button>
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="py-3 border rounded-lg hover:bg-gray-100 text-gray-700"
+                disabled={loading}
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                className="bg-mint hover:bg-mint-dark text-white font-bold py-3 px-4 rounded-lg"
+                disabled={loading}
+              >
+                {loading ? "저장 중..." : "저장"}
+              </button>
             </div>
           </form>
         )}
@@ -137,4 +261,3 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-

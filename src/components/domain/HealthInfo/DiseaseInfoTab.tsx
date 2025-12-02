@@ -1,7 +1,11 @@
 // src/components/domain/HealthInfo/DiseaseInfoTab.tsx
 
 import React, { useState, useEffect } from "react";
-import { HiOutlinePlus, HiOutlineFire, HiOutlineLightningBolt } from "react-icons/hi";
+import {
+  HiOutlinePlus,
+  HiOutlineFire,
+  HiOutlineLightningBolt,
+} from "react-icons/hi";
 import DiseaseModal from "./DiseaseModal";
 import DiseaseDetailModal from "./DiseaseDetailModal";
 import useHealthDataStore, { type Disease } from "../../../store/useHealthDataStore";
@@ -28,19 +32,31 @@ type ModalState = {
 
 export default function DiseaseInfoTab() {
   const [filter, setFilter] = useState<Filter>("all");
-  const [modalState, setModalState] = useState<ModalState>({ isOpen: false, defaultType: "chronic" });
+  const [modalState, setModalState] = useState<ModalState>({
+    isOpen: false,
+    defaultType: "chronic",
+  });
   const [selected, setSelected] = useState<Disease | null>(null);
+
   const diseases = useHealthDataStore((state) => state.diseases);
   const userId = useUserStore((s) => s.user?.id);
 
+  // ============================
+  // 초기 로드: 만성 + 급성 불러오기
+  // ============================
   useEffect(() => {
     const fetchDiseases = async () => {
       try {
-        const [chronics, acutes] = await Promise.all([getChronics(), getAcutes()]);
+        const [chronics, acutes] = await Promise.all([
+          getChronics(),
+          getAcutes(),
+        ]);
+
         const mapped: Disease[] = [
           ...chronics.map(mapChronicToDisease),
           ...acutes.map(mapAcuteToDisease),
         ];
+
         useHealthDataStore.setState({ diseases: mapped });
       } catch (err) {
         console.error("질환 목록 불러오기 실패:", err);
@@ -50,12 +66,17 @@ export default function DiseaseInfoTab() {
     fetchDiseases();
   }, []);
 
+  // ============================
+  // 스토어 액션을 API 기반으로 교체
+  // ============================
   useEffect(() => {
+    // ---- 추가 ----
     const addDisease = async (disease: Omit<Disease, "id">) => {
       if (!userId) {
         toast.error("로그인이 필요합니다.");
         return;
       }
+
       try {
         const mapped =
           disease.type === "chronic"
@@ -64,14 +85,14 @@ export default function DiseaseInfoTab() {
                   disease_name: disease.name,
                   note: disease.meds,
                   user_id: userId,
-                })
+                }),
               )
             : mapAcuteToDisease(
                 await createAcute({
                   disease_name: disease.name,
                   note: disease.meds,
                   user_id: userId,
-                })
+                }),
               );
 
         useHealthDataStore.setState((state) => ({
@@ -84,24 +105,35 @@ export default function DiseaseInfoTab() {
       }
     };
 
-    const updateDisease = async (id: string, patch: Partial<Omit<Disease, "id">>) => {
-      const current = useHealthDataStore.getState().diseases.find((d) => d.id === id);
+    // ---- 수정 ----
+    const updateDisease = async (
+      id: string,
+      patch: Partial<Omit<Disease, "id">>,
+    ) => {
+      const current = useHealthDataStore
+        .getState()
+        .diseases.find((d) => d.id === id);
       if (!current) return;
 
       const nextType = patch.type ?? current.type;
       const nextName = patch.name ?? current.name;
       const nextMeds = patch.meds ?? current.meds;
 
+      // prefix 제거해서 숫자 ID 추출
+      const numericId = Number(id.split("_")[1]);
+
       try {
+        // 타입이 바뀌는 경우: 기존 삭제 + 새로 생성
         if (nextType !== current.type) {
           if (!userId) {
             toast.error("로그인이 필요합니다.");
             return;
           }
+
           if (current.type === "chronic") {
-            await deleteChronic(Number(id));
+            await deleteChronic(numericId);
           } else {
-            await deleteAcute(Number(id));
+            await deleteAcute(numericId);
           }
 
           const recreated =
@@ -111,34 +143,49 @@ export default function DiseaseInfoTab() {
                     disease_name: nextName,
                     note: nextMeds,
                     user_id: userId,
-                  })
+                  }),
                 )
               : mapAcuteToDisease(
                   await createAcute({
                     disease_name: nextName,
                     note: nextMeds,
                     user_id: userId,
-                  })
+                  }),
                 );
 
           useHealthDataStore.setState((state) => ({
-            diseases: state.diseases.map((d) => (d.id === id ? recreated : d)),
+            diseases: state.diseases.map((d) =>
+              d.id === id ? recreated : d,
+            ),
           }));
         } else if (nextType === "chronic") {
-          await updateChronic(Number(id), { disease_name: nextName, note: nextMeds });
+          // 타입 안 바뀜 + 만성
+          await updateChronic(numericId, {
+            disease_name: nextName,
+            note: nextMeds,
+          });
           useHealthDataStore.setState((state) => ({
             diseases: state.diseases.map((d) =>
-              d.id === id ? { ...d, name: nextName, meds: nextMeds, type: nextType } : d
+              d.id === id
+                ? { ...d, name: nextName, meds: nextMeds, type: nextType }
+                : d,
             ),
           }));
         } else {
-          await updateAcute(Number(id), { disease_name: nextName, note: nextMeds });
+          // 타입 안 바뀜 + 급성
+          await updateAcute(numericId, {
+            disease_name: nextName,
+            note: nextMeds,
+          });
           useHealthDataStore.setState((state) => ({
             diseases: state.diseases.map((d) =>
-              d.id === id ? { ...d, name: nextName, meds: nextMeds, type: nextType } : d
+              d.id === id
+                ? { ...d, name: nextName, meds: nextMeds, type: nextType }
+                : d,
             ),
           }));
         }
+
         toast.success("질환이 수정되었습니다.");
       } catch (err) {
         console.error("질환 수정 실패:", err);
@@ -146,15 +193,22 @@ export default function DiseaseInfoTab() {
       }
     };
 
+    // ---- 삭제 ----
     const deleteDisease = async (id: string) => {
-      const current = useHealthDataStore.getState().diseases.find((d) => d.id === id);
+      const current = useHealthDataStore
+        .getState()
+        .diseases.find((d) => d.id === id);
       if (!current) return;
+
+      const numericId = Number(id.split("_")[1]);
+
       try {
         if (current.type === "chronic") {
-          await deleteChronic(Number(id));
+          await deleteChronic(numericId);
         } else {
-          await deleteAcute(Number(id));
+          await deleteAcute(numericId);
         }
+
         useHealthDataStore.setState((state) => ({
           diseases: state.diseases.filter((d) => d.id !== id),
         }));
@@ -165,6 +219,7 @@ export default function DiseaseInfoTab() {
       }
     };
 
+    // 스토어에 교체 주입
     useHealthDataStore.setState((state) => ({
       ...state,
       addDisease,
@@ -173,31 +228,36 @@ export default function DiseaseInfoTab() {
     }));
   }, [userId]);
 
-  const openModal = () => setModalState({ isOpen: true, defaultType: "chronic" });
-  const closeModal = () => setModalState({ isOpen: false, defaultType: "chronic" });
-  const filteredDiseases = diseases.filter((d) => filter === "all" || filter === d.type);
+  const openModal = () =>
+    setModalState({ isOpen: true, defaultType: "chronic" });
+  const closeModal = () =>
+    setModalState({ isOpen: false, defaultType: "chronic" });
+
+  const filteredDiseases = diseases.filter(
+    (d) => filter === "all" || filter === d.type,
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
-          <FilterButton 
-            text="전체" 
-            isActive={filter === "all"} 
-            onClick={() => setFilter("all")} 
+          <FilterButton
+            text="전체"
+            isActive={filter === "all"}
+            onClick={() => setFilter("all")}
           />
-          <FilterButton 
-            text="만성질환" 
-            isActive={filter === "chronic"} 
-            onClick={() => setFilter("chronic")} 
+          <FilterButton
+            text="만성질환"
+            isActive={filter === "chronic"}
+            onClick={() => setFilter("chronic")}
           />
-          <FilterButton 
-            text="급성질병" 
-            isActive={filter === "simple"} 
-            onClick={() => setFilter("simple")} 
+          <FilterButton
+            text="급성질병"
+            isActive={filter === "simple"}
+            onClick={() => setFilter("simple")}
           />
         </div>
-        <button 
+        <button
           onClick={openModal}
           className="flex items-center gap-1 bg-mint hover:bg-mint-dark text-white font-semibold px-4 py-2 rounded-lg transition-colors"
         >
@@ -208,26 +268,43 @@ export default function DiseaseInfoTab() {
       <div className="space-y-3">
         {filteredDiseases.length > 0 ? (
           filteredDiseases.map((d) => (
-            <DiseaseItem 
-              key={d.id} 
-              name={d.name} 
-              meds={d.meds} 
-              tag={d.type === "chronic" ? "만성질환" : "급성질병"} 
-              tagColor={d.type === "chronic" ? "orange" : "blue"} 
-              onClick={() => setSelected(d)} 
+            <DiseaseItem
+              key={d.id}
+              name={d.name}
+              meds={d.meds}
+              tag={d.type === "chronic" ? "만성질환" : "급성질병"}
+              tagColor={d.type === "chronic" ? "orange" : "blue"}
+              onClick={() => setSelected(d)}
             />
           ))
         ) : (
           <p className="text-sm text-gray-400 text-center p-4">
-            {filter === "all" ? "추가된 질환 정보가 없습니다." : "해당 유형의 질환 정보가 없습니다."}
+            {filter === "all"
+              ? "추가된 질환 정보가 없습니다."
+              : "해당 유형의 질환 정보가 없습니다."}
           </p>
         )}
       </div>
-      {modalState.isOpen && <DiseaseModal onClose={closeModal} defaultType={modalState.defaultType} />}
-      {selected && <DiseaseDetailModal disease={selected} onClose={() => setSelected(null)} />}
+
+      {modalState.isOpen && (
+        <DiseaseModal
+          onClose={closeModal}
+          defaultType={modalState.defaultType}
+        />
+      )}
+      {selected && (
+        <DiseaseDetailModal
+          disease={selected}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
+
+// ============================
+// 서브 컴포넌트
+// ============================
 
 type FilterButtonProps = {
   text: string;
@@ -240,7 +317,9 @@ function FilterButton({ text, isActive, onClick }: FilterButtonProps) {
     <button
       onClick={onClick}
       className={`px-3 py-1 text-sm font-semibold rounded-full ${
-        isActive ? "bg-mint text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+        isActive
+          ? "bg-mint text-white"
+          : "bg-gray-200 text-gray-700 hover:bg-gray-300"
       }`}
     >
       {text}
@@ -257,30 +336,50 @@ type ItemProps = {
 };
 
 function DiseaseItem({ name, meds, tag, tagColor, onClick }: ItemProps) {
-  const tagClass = tagColor === "orange" ? "bg-orange-100 text-orange-600" : "bg-blue-100 text-blue-600";
-  const medList = meds ? meds.split(",").map((m) => m.trim()).filter((m) => m.length > 0) : [];
+  const tagClass =
+    tagColor === "orange"
+      ? "bg-orange-100 text-orange-600"
+      : "bg-blue-100 text-blue-600";
+
+  const medList = meds
+    ? meds
+        .split(",")
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0)
+    : [];
+
   const iconData =
     tagColor === "orange"
       ? { icon: <HiOutlineFire />, color: "text-orange-500" }
       : { icon: <HiOutlineLightningBolt />, color: "text-blue-500" };
 
   return (
-    <div className="flex gap-4 items-start bg-white p-3 rounded-md shadow-sm cursor-pointer hover:bg-gray-50" onClick={onClick}>
-      <div className={`w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-2xl flex-shrink-0 ${iconData.color}`}>
+    <div
+      className="flex gap-4 items-start bg-white p-3 rounded-md shadow-sm cursor-pointer hover:bg-gray-50"
+      onClick={onClick}
+    >
+      <div
+        className={`w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-2xl flex-shrink-0 ${iconData.color}`}
+      >
         {iconData.icon}
       </div>
       <div className="flex-1">
         <div className="flex justify-between items-center mb-1">
           <h4 className="font-bold text-dark-gray">{name}</h4>
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tagClass} ml-2 flex-shrink-0`}>
+          <span
+            className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tagClass} ml-2 flex-shrink-0`}
+          >
             {tag}
           </span>
         </div>
-        
+
         {medList.length > 0 && (
           <div className="flex items-center flex-wrap gap-2 mt-2">
             {medList.map((med, index) => (
-              <span key={index} className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+              <span
+                key={index}
+                className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600"
+              >
                 {med}
               </span>
             ))}
@@ -291,9 +390,13 @@ function DiseaseItem({ name, meds, tag, tagColor, onClick }: ItemProps) {
   );
 }
 
+// ============================
+// 백엔드 → 스토어 매퍼
+// ============================
+
 function mapChronicToDisease(item: ChronicResponse): Disease {
   return {
-    id: String(item.chronic_id),
+    id: `chronic_${item.chronic_id}`, // 🔑 prefix 로 ID 충돌 방지
     name: item.disease_name,
     type: "chronic",
     meds: item.note,
@@ -302,7 +405,7 @@ function mapChronicToDisease(item: ChronicResponse): Disease {
 
 function mapAcuteToDisease(item: AcuteResponse): Disease {
   return {
-    id: String(item.acute_id),
+    id: `acute_${item.acute_id}`, // 🔑 prefix 로 ID 충돌 방지
     name: item.disease_name,
     type: "simple",
     meds: item.note,

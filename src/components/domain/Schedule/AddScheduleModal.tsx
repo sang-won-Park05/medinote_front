@@ -4,10 +4,27 @@ import React, { useState, useEffect } from "react";
 import type { ScheduleItem, ScheduleType } from "../../../store/useScheduleStore";
 import { toast } from "react-toastify";
 
+type CreatePayload = {
+  title: string;
+  type: ScheduleType;
+  date: string;
+  time: string;
+  location: string;
+  memo: string;
+};
+
+type UpdatePayload = {
+  title: string;
+  date: string;
+  time: string;
+  location: string;
+  memo: string;
+};
+
 type AddScheduleModalProps = {
   onClose: () => void;
   initial: Partial<ScheduleItem>;
-  onSave: (payload: Omit<ScheduleItem, "id">) => Promise<void> | void;
+  onSave: (payload: CreatePayload | UpdatePayload) => Promise<void> | void;
 };
 
 const SCHEDULE_TYPES: ScheduleType[] = ["진료", "검진"];
@@ -17,6 +34,8 @@ export default function AddScheduleModal({
   initial,
   onSave,
 }: AddScheduleModalProps) {
+  const isEdit = !!initial.id;
+
   const [title, setTitle] = useState(initial.title ?? "");
   const [type, setType] = useState<ScheduleType>(initial.type ?? "진료");
   const [date, setDate] = useState(initial.date ?? "");
@@ -31,6 +50,7 @@ export default function AddScheduleModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!title.trim() || !date || !time) {
       toast.error("제목, 날짜, 시간을 입력해주세요.");
       return;
@@ -39,14 +59,40 @@ export default function AddScheduleModal({
 
     try {
       setSubmitting(true);
-      await onSave({
-        title: title.trim(),
-        type,
-        date,
-        time,
-        location: location.trim() || "",
-        memo: memo.trim() || "",
-      });
+
+      if (isEdit) {
+        // ============================
+        //         🔥 PATCH (수정)
+        // ============================
+        const updatePayload: UpdatePayload = {
+          title: title.trim(),
+          date,
+          time,
+          location: location.trim(),
+          memo: memo.trim(),
+        };
+
+        console.log("PATCH PAYLOAD (AddModal):", updatePayload);
+
+        await onSave(updatePayload);
+      } else {
+        // ============================
+        //         🔥 POST (추가)
+        // ============================
+        const createPayload: CreatePayload = {
+          title: title.trim(),
+          type,
+          date,
+          time,
+          location: location.trim(),
+          memo: memo.trim(),
+        };
+
+        console.log("POST PAYLOAD (AddModal):", createPayload);
+
+        await onSave(createPayload);
+      }
+
       onClose();
     } catch (err) {
       console.error("일정 저장 실패:", err);
@@ -59,8 +105,12 @@ export default function AddScheduleModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
-        <h2 className="text-lg font-bold text-dark-gray mb-1">일정 추가</h2>
-        <p className="text-xs text-gray-500 mb-4">진료 또는 검진 일정을 기록하세요</p>
+        <h2 className="text-lg font-bold text-dark-gray mb-1">
+          {isEdit ? "일정 수정" : "일정 추가"}
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">
+          진료 또는 검진 일정을 {isEdit ? "수정" : "기록"}하세요
+        </p>
 
         <form className="space-y-3" onSubmit={handleSubmit}>
           <div>
@@ -79,6 +129,7 @@ export default function AddScheduleModal({
               className="w-full border rounded-lg px-3 py-2 text-sm"
               value={type}
               onChange={(e) => setType(e.target.value as ScheduleType)}
+              disabled={isEdit} // 수정 시 type 변경 불가
             >
               {SCHEDULE_TYPES.map((t) => (
                 <option key={t} value={t}>

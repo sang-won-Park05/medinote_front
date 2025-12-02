@@ -10,9 +10,18 @@ import {
   HiOutlinePhotograph,
   HiOutlineCheckCircle,
 } from "react-icons/hi";
-import useHealthDataStore, { type Medication } from "../../../store/useHealthDataStore";
+import useHealthDataStore, {
+  type Medication,
+} from "../../../store/useHealthDataStore";
 import { toast } from "react-toastify";
+
+// 영양제(drug) API
 import { createDrug, type DrugItem } from "../../../api/drugAPI";
+// 처방약(prescription) API
+import {
+  createPrescription,
+  type PrescriptionItem,
+} from "../../../api/prescriptionAPI";
 
 type Step = "selectType" | "fillForm";
 type MedType = "prescription" | "supplement";
@@ -58,7 +67,9 @@ export default function AddMedModal({
     endDate: new Date().toISOString().split("T")[0],
   });
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
@@ -75,31 +86,63 @@ export default function AddMedModal({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+
     if (!formData.name.trim()) {
       toast.error("약 이름을 입력해주세요.");
       return;
     }
 
     const selectedOptions = formData.schedule.filter((s) => s !== "기타");
-    const custom = formData.schedule.includes("기타") ? formData.customSchedule.trim() : "";
+    const custom = formData.schedule.includes("기타")
+      ? formData.customSchedule.trim()
+      : "";
+
     if (formData.schedule.includes("기타") && !custom) {
       toast.error("기타 복용 시간을 입력해주세요.");
       return;
     }
 
     try {
-      const res = await createDrug({
-        med_name: formData.name,
-        dosage_form: formData.dosageForm,
-        dose: formData.dose,
-        unit: formData.unit,
-        schedule: selectedOptions,
-        custom_schedule: custom,
-        start_date: formData.startDate,
-        end_date: formData.endDate,
-      });
+      let newMed: Medication;
 
-      const newMed = mapDrugToMedication(res, medType);
+      if (medType === "supplement") {
+        // ==========================
+        // 영양제 → POST /drug/
+        // ==========================
+        const res = await createDrug({
+          med_name: formData.name,
+          dosage_form: formData.dosageForm,
+          dose: formData.dose,
+          unit: formData.unit,
+          schedule: selectedOptions,
+          custom_schedule: custom,
+          start_date: formData.startDate,
+          end_date: formData.endDate,
+        });
+
+        newMed = mapDrugToMedication(res, "supplement");
+      } else {
+        // ==========================
+        // 처방약 → POST /prescription/visit/{visit_id}
+        // ==========================
+        // ⚠️ visitId는 진료내역 연동 전까지는 임시 값 사용
+        const visitId = 1;
+
+        const res = await createPrescription(visitId, {
+          med_name: formData.name,
+          dosageForm: formData.dosageForm,
+          dose: formData.dose,
+          unit: formData.unit,
+          schedule: selectedOptions,
+          customSchedule: custom || null,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+        });
+
+        newMed = mapPrescriptionToMedication(res);
+      }
+
+      // Zustand store에 추가
       useHealthDataStore.setState((state) => ({
         medications: [...state.medications, newMed],
       }));
@@ -152,7 +195,9 @@ export default function AddMedModal({
           <h2 className="text-xl font-bold text-dark-gray">약 추가</h2>
           <CloseButton onClick={onClose} />
         </div>
-        <p className="text-sm text-gray-500 mb-6">추가하려는 약의 종류를 선택하세요</p>
+        <p className="text-sm text-gray-500 mb-6">
+          추가하려는 약의 종류를 선택하세요
+        </p>
         <div className="flex gap-4">
           <TypeCard
             icon={<HiOutlineClipboardCheck />}
@@ -173,7 +218,10 @@ export default function AddMedModal({
             }}
           />
         </div>
-        <button onClick={onClose} className="mt-6 w-full py-3 border rounded-lg hover:bg-gray-100 text-gray-700">
+        <button
+          onClick={onClose}
+          className="mt-6 w-full py-3 border rounded-lg hover:bg-gray-100 text-gray-700"
+        >
           닫기
         </button>
       </ModalWrapper>
@@ -189,7 +237,9 @@ export default function AddMedModal({
         <CloseButton onClick={onClose} />
       </div>
       <p className="text-sm text-gray-500 mb-6">
-        {medType === "prescription" ? "OCR 스캔 또는 직접 입력하세요." : "제품 정보를 입력하세요."}
+        {medType === "prescription"
+          ? "OCR 스캔 또는 직접 입력하세요."
+          : "제품 정보를 입력하세요."}
       </p>
 
       {medType === "prescription" && (
@@ -197,8 +247,12 @@ export default function AddMedModal({
           {ocrStep === "idle" && (
             <>
               <HiOutlineCamera className="text-3xl text-mint mx-auto mb-2" />
-              <h3 className="font-semibold text-dark-gray mb-1">처방전을 스캔할까요?</h3>
-              <p className="text-sm text-gray-600 mb-3">OCR 스캔으로 약 정보를 자동으로 입력합니다.</p>
+              <h3 className="font-semibold text-dark-gray mb-1">
+                처방전을 스캔할까요?
+              </h3>
+              <p className="text-sm text-gray-600 mb-3">
+                OCR 스캔으로 약 정보를 자동으로 입력합니다.
+              </p>
               <button
                 type="button"
                 onClick={() => setOcrStep("selectMethod")}
@@ -212,8 +266,21 @@ export default function AddMedModal({
           {ocrStep === "selectMethod" && (
             <div>
               <h3 className="font-semibold text-dark-gray mb-3">이미지 선택</h3>
-              <input type="file" id="camera-input" accept="image/*" capture className="hidden" onChange={handleImageSelect} />
-              <input type="file" id="album-input" accept="image/*" className="hidden" onChange={handleImageSelect} />
+              <input
+                type="file"
+                id="camera-input"
+                accept="image/*"
+                capture
+                className="hidden"
+                onChange={handleImageSelect}
+              />
+              <input
+                type="file"
+                id="album-input"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageSelect}
+              />
 
               <div className="flex gap-4 justify-center">
                 <label
@@ -221,7 +288,9 @@ export default function AddMedModal({
                   className="flex-1 flex flex-col items-center p-4 border rounded-lg hover:bg-white cursor-pointer"
                 >
                   <HiOutlineCamera className="text-3xl text-mint" />
-                  <span className="text-sm font-semibold mt-1">카메라 촬영</span>
+                  <span className="text-sm font-semibold mt-1">
+                    카메라 촬영
+                  </span>
                 </label>
 
                 <label
@@ -229,7 +298,9 @@ export default function AddMedModal({
                   className="flex-1 flex flex-col items-center p-4 border rounded-lg hover:bg-white cursor-pointer"
                 >
                   <HiOutlinePhotograph className="text-3xl text-mint" />
-                  <span className="text-sm font-semibold mt-1">앨범에서 선택</span>
+                  <span className="text-sm font-semibold mt-1">
+                    앨범에서 선택
+                  </span>
                 </label>
               </div>
             </div>
@@ -237,13 +308,27 @@ export default function AddMedModal({
 
           {ocrStep === "preview" && imagePreview && (
             <div>
-              <h3 className="font-semibold text-dark-gray mb-3">이미지 미리보기</h3>
-              <img src={imagePreview} alt="Prescription Preview" className="rounded-lg mb-3" />
+              <h3 className="font-semibold text-dark-gray mb-3">
+                이미지 미리보기
+              </h3>
+              <img
+                src={imagePreview}
+                alt="Prescription Preview"
+                className="rounded-lg mb-3"
+              />
               <div className="flex gap-3">
-                <button type="button" onClick={handleScanAgain} className="flex-1 py-2 border rounded-lg hover:bg-gray-100 text-gray-700">
+                <button
+                  type="button"
+                  onClick={handleScanAgain}
+                  className="flex-1 py-2 border rounded-lg hover:bg-gray-100 text-gray-700"
+                >
                   다시 선택
                 </button>
-                <button type="button" onClick={handleScanStart} className="flex-1 bg-mint text-white font-semibold rounded-lg hover:bg-mint-dark">
+                <button
+                  type="button"
+                  onClick={handleScanStart}
+                  className="flex-1 bg-mint text-white font-semibold rounded-lg hover:bg-mint-dark"
+                >
                   스캔 시작
                 </button>
               </div>
@@ -252,16 +337,24 @@ export default function AddMedModal({
 
           {ocrStep === "scanning" && (
             <div className="h-24 flex flex-col items-center justify-center">
-              <div className="w-8 h-8 border-4 border-mint border-t-transparent rounded-full animate-spin mb-3"></div>
-              <p className="text-sm text-dark-gray font-semibold">스캔 중입니다...</p>
+              <div className="w-8 h-8 border-4 border-mint border-t-transparent rounded-full animate-spin mb-3" />
+              <p className="text-sm text-dark-gray font-semibold">
+                스캔 중입니다...
+              </p>
             </div>
           )}
 
           {ocrStep === "complete" && (
             <div className="h-24 flex flex-col items-center justify-center">
               <HiOutlineCheckCircle className="text-4xl text-green-500 mb-3" />
-              <p className="text-sm text-dark-gray font-semibold">스캔 완료! 내용을 확인해주세요.</p>
-              <button type="button" onClick={handleScanAgain} className="text-xs text-mint hover:underline mt-1">
+              <p className="text-sm text-dark-gray font-semibold">
+                스캔 완료! 내용을 확인해주세요.
+              </p>
+              <button
+                type="button"
+                onClick={handleScanAgain}
+                className="text-xs text-mint hover:underline mt-1"
+              >
                 다시 스캔하기
               </button>
             </div>
@@ -275,7 +368,9 @@ export default function AddMedModal({
 
       <form className="grid grid-cols-2 gap-4" onSubmit={handleSubmit}>
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">약 이름</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">
+            약 이름
+          </label>
           <input
             name="name"
             value={formData.name}
@@ -285,7 +380,9 @@ export default function AddMedModal({
           />
         </div>
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">제형</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">
+            제형
+          </label>
           <select
             name="dosageForm"
             value={formData.dosageForm}
@@ -298,7 +395,9 @@ export default function AddMedModal({
           </select>
         </div>
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">용량</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">
+            용량
+          </label>
           <input
             name="dose"
             value={formData.dose}
@@ -308,7 +407,9 @@ export default function AddMedModal({
           />
         </div>
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">단위</label>
+          <label className="block text-sm font-bold text-gray-700 mb-1">
+            단위
+          </label>
           <select
             name="unit"
             value={formData.unit}
@@ -323,7 +424,9 @@ export default function AddMedModal({
           </select>
         </div>
         <div className="col-span-2">
-          <label className="block text-sm font-bold text-gray-700 mb-2">복용 시간</label>
+          <label className="block text-sm font-bold text-gray-700 mb-2">
+            복용 시간
+          </label>
           <div className="flex flex-wrap gap-2 mb-2">
             {SCHEDULE_OPTIONS.map((option) => {
               const isActive = formData.schedule.includes(option);
@@ -333,7 +436,9 @@ export default function AddMedModal({
                   type="button"
                   onClick={() => handleScheduleToggle(option)}
                   className={`px-3 py-3 rounded-lg text-sm font-medium border transition-all ${
-                    isActive ? "bg-mint text-white border-mint shadow-sm" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
+                    isActive
+                      ? "bg-mint text-white border-mint shadow-sm"
+                      : "bg-white text-gray-500 border-gray-200 hover:bg-gray-50"
                   }`}
                 >
                   {option}
@@ -353,12 +458,28 @@ export default function AddMedModal({
           )}
         </div>
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">시작일</label>
-          <input type="date" name="startDate" value={formData.startDate} onChange={handleChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+          <label className="block text-sm font-bold text-gray-700 mb-1">
+            시작일
+          </label>
+          <input
+            type="date"
+            name="startDate"
+            value={formData.startDate}
+            onChange={handleChange}
+            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
+          />
         </div>
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">종료일</label>
-          <input type="date" name="endDate" value={formData.endDate} onChange={handleChange} className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint" />
+          <label className="block text-sm font-bold text-gray-700 mb-1">
+            종료일
+          </label>
+          <input
+            type="date"
+            name="endDate"
+            value={formData.endDate}
+            onChange={handleChange}
+            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-mint"
+          />
         </div>
 
         <div className="col-span-2 flex gap-3 mt-6">
@@ -374,7 +495,10 @@ export default function AddMedModal({
               <HiOutlineArrowLeft /> 이전
             </button>
           )}
-          <button type="submit" className="flex-1 bg-mint hover:bg-mint-dark text-white font-bold py-3 px-4 rounded-lg">
+          <button
+            type="submit"
+            className="flex-1 bg-mint hover:bg-mint-dark text-white font-bold py-3 px-4 rounded-lg"
+          >
             추가
           </button>
         </div>
@@ -383,45 +507,81 @@ export default function AddMedModal({
   );
 }
 
-const ModalWrapper: React.FC<{ onClose: () => void; children: React.ReactNode; wide?: boolean }> = ({
-  onClose,
-  children,
-  wide = false,
-}) => (
-  <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
-    <div className={`w-full ${wide ? "max-w-2xl" : "max-w-md"} bg-white rounded-lg shadow-popup p-6 z-50`} onClick={(e) => e.stopPropagation()}>
+const ModalWrapper: React.FC<{
+  onClose: () => void;
+  children: React.ReactNode;
+  wide?: boolean;
+}> = ({ onClose, children, wide = false }) => (
+  <div
+    className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+    onClick={onClose}
+  >
+    <div
+      className={`w-full ${
+        wide ? "max-w-2xl" : "max-w-md"
+      } bg-white rounded-lg shadow-popup p-6 z-50`}
+      onClick={(e) => e.stopPropagation()}
+    >
       {children}
     </div>
   </div>
 );
 
 const CloseButton: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-  <button onClick={onClick} className="text-gray-400 hover:text-dark-gray text-2xl">
+  <button
+    onClick={onClick}
+    className="text-gray-400 hover:text-dark-gray text-2xl"
+  >
     <HiOutlineX />
   </button>
 );
 
-const TypeCard: React.FC<{ icon: React.ReactNode; title: string; description: string; onClick: () => void }> = ({
-  icon,
-  title,
-  description,
-  onClick,
-}) => (
-  <button onClick={onClick} className="flex-1 p-6 border rounded-lg text-center hover:bg-mint/10 hover:border-mint transition-all">
+const TypeCard: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+}> = ({ icon, title, description, onClick }) => (
+  <button
+    onClick={onClick}
+    className="flex-1 p-6 border rounded-lg text-center hover:bg-mint/10 hover:border-mint transition-all"
+  >
     <div className="text-4xl text-mint mx-auto mb-3">{icon}</div>
     <h3 className="font-bold text-lg text-dark-gray">{title}</h3>
     <p className="text-sm text-gray-500">{description}</p>
   </button>
 );
 
-function mapDrugToMedication(item: DrugItem, type: "prescription" | "supplement"): Medication {
+// ==============================
+// 매핑 유틸
+// ==============================
+function mapDrugToMedication(
+  item: DrugItem,
+  type: "prescription" | "supplement"
+): Medication {
   const parts = [...item.schedule];
   if (item.custom_schedule) parts.push(item.custom_schedule);
   return {
     id: String(item.drug_id),
     name: item.med_name,
     type,
-    dosageForm: item.dosage_form,
+    dosageForm: item.dosage_form as Medication["dosageForm"],
+    dose: item.dose,
+    unit: item.unit,
+    schedule: parts.join(", "),
+    startDate: item.start_date,
+    endDate: item.end_date,
+  };
+}
+
+function mapPrescriptionToMedication(item: PrescriptionItem): Medication {
+  const parts = [...item.schedule];
+  if (item.custom_schedule) parts.push(item.custom_schedule);
+  return {
+    id: String(item.prescription_id),
+    name: item.med_name,
+    type: "prescription",
+    dosageForm: item.dosage_form as Medication["dosageForm"],
     dose: item.dose,
     unit: item.unit,
     schedule: parts.join(", "),

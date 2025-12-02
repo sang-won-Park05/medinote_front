@@ -1,21 +1,21 @@
 // src/pages/Schedule/SchedulePage.tsx
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Calendar } from 'react-calendar';
-import 'react-calendar/dist/Calendar.css';
-import AddScheduleModal from '../../components/domain/Schedule/AddScheduleModal';
-import ScheduleDetailModal from '../../components/domain/Schedule/ScheduleDetailModal';
-import useScheduleStore, { type ScheduleItem } from '../../store/useScheduleStore';
-import { kstYmd } from '../../utils/date';
-import { HiOutlinePlus } from 'react-icons/hi';
+import React, { useEffect, useMemo, useState } from "react";
+import { Calendar } from "react-calendar";
+import "react-calendar/dist/Calendar.css";
+import AddScheduleModal from "../../components/domain/Schedule/AddScheduleModal";
+import ScheduleDetailModal from "../../components/domain/Schedule/ScheduleDetailModal";
+import useScheduleStore, { type ScheduleItem } from "../../store/useScheduleStore";
+import { kstYmd } from "../../utils/date";
+import { HiOutlinePlus } from "react-icons/hi";
 import {
   getSchedules,
   createSchedule,
   updateSchedule as updateScheduleAPI,
   deleteSchedule as deleteScheduleAPI,
   type ScheduleResponse,
-} from '../../api/schedule';
-import { toast } from 'react-toastify';
+} from "../../api/schedule";
+import { toast } from "react-toastify";
 
 type ValuePiece = Date | null;
 type Value = ValuePiece | [ValuePiece, ValuePiece];
@@ -27,6 +27,7 @@ export default function SchedulePage() {
   const [detailItem, setDetailItem] = useState<ScheduleItem | null>(null);
 
   const { schedules } = useScheduleStore();
+
   useEffect(() => {
     const fetchSchedules = async () => {
       try {
@@ -35,14 +36,14 @@ export default function SchedulePage() {
           schedules: data.map(mapScheduleResponseToItem),
         });
       } catch (err) {
-        console.error('일정 목록 불러오기 실패:', err);
-        toast.error('일정을 불러오지 못했습니다.');
+        console.error("일정 목록 불러오기 실패:", err);
+        toast.error("일정을 불러오지 못했습니다.");
       }
     };
     fetchSchedules();
   }, []);
 
-  const selectedDateStr = date instanceof Date ? kstYmd(date) : '';
+  const selectedDateStr = date instanceof Date ? kstYmd(date) : "";
   const daySchedules = useMemo(
     () =>
       schedules
@@ -53,12 +54,12 @@ export default function SchedulePage() {
 
   const formattedDate =
     date instanceof Date
-      ? date.toLocaleDateString('ko-KR', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
+      ? date.toLocaleDateString("ko-KR", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
         })
-      : '날짜를 선택하세요';
+      : "날짜를 선택하세요";
 
   return (
     <>
@@ -104,7 +105,7 @@ export default function SchedulePage() {
               value={date}
               locale="ko-KR"
               formatDay={(locale, d) =>
-                d.toLocaleString('en', { day: 'numeric' })
+                d.toLocaleString("en", { day: "numeric" })
               }
               next2Label={null}
               prev2Label={null}
@@ -132,7 +133,11 @@ export default function SchedulePage() {
             <div className="space-y-3 min-h-[200px]">
               {daySchedules.length > 0 ? (
                 daySchedules.map((s) => (
-                  <ScheduleRow key={s.id} item={s} onClick={() => setDetailItem(s)} />
+                  <ScheduleRow
+                    key={s.id}
+                    item={s}
+                    onClick={() => setDetailItem(s)}
+                  />
                 ))
               ) : (
                 <div className="flex flex-col items-center justify-center h-[200px] text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
@@ -144,7 +149,7 @@ export default function SchedulePage() {
         </section>
       </div>
 
-      {/* 일정 추가 모달 */}
+      {/* 일정 추가 / 수정 모달 */}
       {isModalOpen && (
         <AddScheduleModal
           onClose={() => setIsModalOpen(false)}
@@ -152,24 +157,58 @@ export default function SchedulePage() {
           onSave={async (payload) => {
             try {
               if (editItem) {
-                const updated = await updateScheduleAPI(editItem.id, payload);
+                // ✅ PATCH용 payload: type, created_at, id 절대 안 보냄
+                const updatePayload = {
+                  title: payload.title,
+                  date: payload.date,
+                  time: payload.time,
+                  location: payload.location ?? "",
+                  memo: payload.memo ?? "",
+                };
+
+                console.log("🔼 PATCH /schedule (from AddModal):", updatePayload);
+
+                const updated = await updateScheduleAPI(
+                  editItem.id,
+                  updatePayload
+                );
                 const mapped = mapScheduleResponseToItem(updated);
                 useScheduleStore.setState((state) => ({
-                  schedules: state.schedules.map((s) => (s.id === mapped.id ? mapped : s)),
+                  schedules: state.schedules.map((s) =>
+                    s.id === mapped.id ? mapped : s
+                  ),
                 }));
-                toast.success('일정이 수정되었습니다.');
+                toast.success("일정이 수정되었습니다.");
               } else {
-                const created = await createSchedule(payload);
+                // ✅ 생성용 payload: type 포함, string으로 보장
+                const createPayload = {
+                  title: payload.title,
+                  type: payload.type!, // AddScheduleModal에서 항상 세팅
+                  date: payload.date,
+                  time: payload.time,
+                  location: payload.location ?? "",
+                  memo: payload.memo ?? "",
+                };
+
+                console.log(
+                  "🔼 POST /schedule (from AddModal):",
+                  createPayload
+                );
+
+                const created = await createSchedule(createPayload);
                 const mapped = mapScheduleResponseToItem(created);
                 useScheduleStore.setState((state) => ({
                   schedules: [...state.schedules, mapped],
                 }));
-                toast.success('일정이 추가되었습니다.');
+                toast.success("일정이 추가되었습니다.");
               }
               setIsModalOpen(false);
-            } catch (err) {
-              console.error('일정 저장 실패:', err);
-              toast.error('일정 저장에 실패했습니다.');
+            } catch (err: any) {
+              console.error("일정 저장 실패:", err);
+              if (err.response) {
+                console.error("🔻 schedule save error detail:", err.response.data);
+              }
+              toast.error("일정 저장에 실패했습니다.");
             }
           }}
         />
@@ -182,16 +221,33 @@ export default function SchedulePage() {
           onClose={() => setDetailItem(null)}
           onUpdate={async (id, patch) => {
             try {
-              const updated = await updateScheduleAPI(id, patch);
+              // ✅ 여기서도 PATCH용 payload를 명시적으로 구성 (type, created_at 제거)
+              const updatePayload = {
+                title: patch.title ?? detailItem.title,
+                date: patch.date ?? detailItem.date,
+                time: patch.time ?? detailItem.time,
+                location: patch.location ?? detailItem.location ?? "",
+                memo: patch.memo ?? detailItem.memo ?? "",
+              };
+
+              console.log("🔼 PATCH /schedule (from DetailModal):", updatePayload);
+
+              const updated = await updateScheduleAPI(id, updatePayload);
               const mapped = mapScheduleResponseToItem(updated);
+
               useScheduleStore.setState((state) => ({
-                schedules: state.schedules.map((s) => (s.id === mapped.id ? mapped : s)),
+                schedules: state.schedules.map((s) =>
+                  s.id === mapped.id ? mapped : s
+                ),
               }));
               setDetailItem(mapped);
-              toast.success('일정이 수정되었습니다.');
-            } catch (err) {
-              console.error('일정 수정 실패:', err);
-              toast.error('일정 수정에 실패했습니다.');
+              toast.success("일정이 수정되었습니다.");
+            } catch (err: any) {
+              console.error("일정 수정 실패:", err);
+              if (err.response) {
+                console.error("🔻 422 detail:", err.response.data);
+              }
+              toast.error("일정 수정에 실패했습니다.");
               throw err;
             }
           }}
@@ -201,10 +257,10 @@ export default function SchedulePage() {
               useScheduleStore.setState((state) => ({
                 schedules: state.schedules.filter((s) => s.id !== id),
               }));
-              toast.success('일정이 삭제되었습니다.');
+              toast.success("일정이 삭제되었습니다.");
             } catch (err) {
-              console.error('일정 삭제 실패:', err);
-              toast.error('일정 삭제에 실패했습니다.');
+              console.error("일정 삭제 실패:", err);
+              toast.error("일정 삭제에 실패했습니다.");
               throw err;
             }
           }}
@@ -221,19 +277,19 @@ function ScheduleRow({
   item: ScheduleItem;
   onClick: () => void;
 }) {
-  const isClinic = item.type === '진료';
+  const isClinic = item.type === "진료";
 
   return (
     <button
       onClick={onClick}
       className={`w-full flex items-center p-4 rounded-xl transition-all hover:shadow-md border ${
-        isClinic ? 'bg-blue-50 border-blue-100' : 'bg-green-50 border-green-100'
+        isClinic ? "bg-blue-50 border-blue-100" : "bg-green-50 border-green-100"
       }`}
     >
       {/* 시간 */}
       <div
         className={`w-16 text-lg font-bold text-left ${
-          isClinic ? 'text-blue-600' : 'text-green-600'
+          isClinic ? "text-blue-600" : "text-green-600"
         }`}
       >
         {item.time}
@@ -244,7 +300,9 @@ function ScheduleRow({
 
       {/* 내용 */}
       <div className="flex-1 text-left">
-        <div className="font-bold text-dark-gray text-base">{item.title}</div>
+        <div className="font-bold text-dark-gray text-base">
+          {item.title}
+        </div>
 
         {item.location && (
           <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-1">
@@ -252,7 +310,7 @@ function ScheduleRow({
           </div>
         )}
 
-        {/* 🔥 메모 표시 추가됨 */}
+        {/* 메모 표시 */}
         {item.memo && (
           <div className="text-xs text-gray-400 mt-1 truncate">
             {item.memo}
@@ -267,7 +325,7 @@ function mapScheduleResponseToItem(item: ScheduleResponse): ScheduleItem {
   return {
     id: item.id,
     title: item.title,
-    type: item.type as ScheduleItem['type'],
+    type: item.type as ScheduleItem["type"],
     date: item.date,
     time: item.time,
     location: item.location || undefined,
